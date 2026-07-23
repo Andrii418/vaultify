@@ -128,3 +128,77 @@
     @apply font-sans;
   }
 }
+
+/* ============================================
+   VAULTIFY — Nadpisanie motywu na Obsidian Premium
+   Wymuszamy JEDEN, stały ciemny motyw (bez przełącznika
+   jasny/ciemny) — to świadoma decyzja projektowa: Vaultify
+   to narzędzie bezpieczeństwa, ciemny motyw wzmacnia
+   poczucie "sejfu", a nie casualowej apki.
+   ============================================ */
+.dark {
+  --background: #0a0a0c;
+  --foreground: #f4f4f5;
+
+  --card: #0f0f12;
+  --card-foreground: #f4f4f5;
+
+  --popover: #0f0f12;
+  --popover-foreground: #f4f4f5;
+
+  /* Akcent bursztynowy — "fizyczny sejf" */
+  --primary: #f0a868;
+  --primary-foreground: #0a0a0c;
+
+  --secondary: #18181b;
+  --secondary-foreground: #f4f4f5;
+
+  --muted: #18181b;
+  --muted-foreground: #a1a1aa;
+
+  /* Akcent cyjanowy — "cyfrowy szyfr", używany oszczędnie */
+  --accent: #5eead4;
+  --accent-foreground: #0a0a0c;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.1);
+  --ring: #f0a868;
+}
+
+/* Delikatny, ziarnisty gradient w tle — dodaje głębi obsydianowi
+   bez odciągania uwagi od treści. Czysto estetyczny detal premium. */
+body {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(240, 168, 104, 0.08), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 100%, rgba(94, 234, 212, 0.05), transparent),
+    var(--background);
+  min-height: 100vh;
+}
+
+/* Klasa narzędziowa dla szklanych paneli — używana wielokrotnie
+   w komponentach, więc definiujemy raz zamiast powtarzać klasy Tailwind. */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Świecąca ramka przy hover/focus — subtelny sygnał interaktywności */
+.glow-border-hover {
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+.glow-border-hover:hover,
+.glow-border-hover:focus-within {
+  border-color: rgba(240, 168, 104, 0.4);
+  box-shadow: 0 0 30px -10px rgba(240, 168, 104, 0.3);
+}
+
+/* Krój monospace do podglądu szyfrogramu i etykiet technicznych */
+.font-mono-vaultify {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  letter-spacing: -0.01em;
+}
