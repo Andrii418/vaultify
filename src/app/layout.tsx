@@ -6,6 +6,12 @@ export const metadata: Metadata = {
   title: "Vaultify — Zero-Knowledge Secret Sharing",
   description:
     "Wysyłaj hasła, klucze API i poufne wiadomości przez linki, które serwer nigdy nie potrafi odczytać.",
+  openGraph: {
+    title: "Vaultify — Zero-Knowledge Secret Sharing",
+    description:
+      "Szyfrowanie AES-256-GCM w przeglądarce. Serwer nigdy nie widzi treści.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({
