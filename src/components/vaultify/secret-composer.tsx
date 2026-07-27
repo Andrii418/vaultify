@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import { encryptSecret } from "@/lib/crypto";
-import { createClient } from "@/lib/supabase/client";
 
 // Znaki używane w efekcie "scramble" pod polem tekstowym —
 // mieszanka cyfr szesnastkowych i znaków Base64URL, żeby wyglądało
@@ -85,32 +84,36 @@ export function SecretComposer() {
     setIsCreating(true);
 
     try {
-      // Krok 1: szyfrujemy TREŚĆ LOKALNIE, zanim cokolwiek trafi do sieci
       const { payload, keyForUrl } = await encryptSecret(
         secretText,
         isPasswordProtected ? password : undefined
       );
 
-      // Krok 2: generujemy id sami (patrz wyjaśnienie z Etapu 3 —
-      // pozwala to ominąć potrzebę uprawnienia SELECT po zapisie)
-      const newId = crypto.randomUUID();
       const expiresAt = new Date(Date.now() + Number(ttl));
 
-      const supabase = createClient();
-      const { error } = await supabase.from("secrets").insert({
-        id: newId,
-        ciphertext: payload.ciphertext,
-        iv: payload.iv,
-        salt: payload.salt,
-        is_password_protected: payload.isPasswordProtected,
-        burn_after_reading: burnAfterReading,
-        expires_at: expiresAt.toISOString(),
+      const response = await fetch("/api/create-secret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ciphertext: payload.ciphertext,
+          iv: payload.iv,
+          salt: payload.salt,
+          is_password_protected: payload.isPasswordProtected,
+          burn_after_reading: burnAfterReading,
+          expires_at: expiresAt.toISOString(),
+        }),
       });
 
-      if (error) throw error;
+      const result = await response.json();
 
-      // Krok 3: budujemy finalny link. Klucz trafia do fragmentu (#k=...)
-      // TYLKO gdy sekret NIE jest chroniony hasłem — patrz Etap 2.
+      if (!response.ok) {
+        toast.error(result.error || "Nie udało się stworzyć linku.");
+        setIsCreating(false);
+        return;
+      }
+
+      const newId = result.id;
+
       const baseUrl = `${window.location.origin}/s/${newId}`;
       const finalLink = keyForUrl ? `${baseUrl}#k=${keyForUrl}` : baseUrl;
 
