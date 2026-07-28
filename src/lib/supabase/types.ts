@@ -31,8 +31,13 @@ export interface NewSecretInput {
 
 // Kształt danych zwracanych przez naszą funkcję RPC get_and_burn_secret.
 export interface BurnedSecretResult {
-  ciphertext: string;
-  iv: string;
+  ciphertext: string | null;
+  iv: string | null;
   salt: string | null;
   is_password_protected: boolean;
+  file_path: string | null;
+  file_iv: string | null;
+  file_name: string | null;
+  file_mime: string | null;
+  file_size: number | null;
 }

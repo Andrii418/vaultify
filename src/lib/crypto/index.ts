@@ -2,8 +2,7 @@
  * index.ts
  * 
  * Publiczne, wysokopoziomowe API silnika kryptograficznego Vaultify.
- * Komponenty React w aplikacji będą importować TYLKO z tego pliku —
- * nie muszą znać szczegółów AES-GCM czy PBKDF2 "pod maską".
+ * Komponenty React w aplikacji importują TYLKO z tego pliku.
  */
 
 import {
@@ -12,6 +11,8 @@ import {
   importKeyFromBase64Url,
   encryptData,
   decryptData,
+  encryptBuffer,
+  decryptBuffer,
   type EncryptedPayload,
 } from "./aes";
 
@@ -23,42 +24,31 @@ import {
 } from "./password";
 
 /**
- * Kompletny wynik zaszyfrowania sekretu — dokładnie to, co zapiszemy
- * w Supabase (poza kluczem, który trafia do URL, nie do bazy!).
+ * Kompletny wynik zaszyfrowania sekretu tekstowego (stara ścieżka,
+ * zostawiona dla kompatybilności — nowy kod woli createEncryptionKey).
  */
 export interface VaultifyEncryptedSecret {
   ciphertext: string;
   iv: string;
-  salt: string | null; // null jeśli sekret NIE jest chroniony hasłem
+  salt: string | null;
   isPasswordProtected: boolean;
 }
 
-/**
- * Wynik funkcji encryptSecret — zawiera zarówno dane do zapisania
- * w bazie (`payload`), jak i klucz, który MUSI trafić do URL,
- * a NIGDY do bazy danych (`keyForUrl`).
- */
 export interface EncryptResult {
   payload: VaultifyEncryptedSecret;
-  keyForUrl: string | null; // null gdy sekret jest chroniony hasłem —
-  // wtedy klucza w ogóle nie umieszczamy w URL, bo wyprowadza się go
-  // z hasła znanego tylko nadawcy i odbiorcy
+  keyForUrl: string | null;
 }
 
 /**
- * Główna funkcja szyfrująca. Wywoływana w momencie, gdy użytkownik
- * klika "Stwórz bezpieczny link" w interfejsie.
- * 
- * @param plaintext - tajna treść wpisana przez użytkownika
- * @param password - opcjonalne hasło. Jeśli podane, sekret będzie
- *   wymagał ZARÓWNO linku, JAK I hasła do odszyfrowania.
+ * Starsza, wysokopoziomowa funkcja szyfrująca WYŁĄCZNIE tekst.
+ * Zostawiona dla kompatybilności z resztą kodu — nowy SecretComposer
+ * używa zamiast tego createEncryptionKey + encryptTextWithKey,
+ * żeby móc użyć TEGO SAMEGO klucza również do pliku.
  */
 export async function encryptSecret(
   plaintext: string,
   password?: string
 ): Promise<EncryptResult> {
-  // Scenariusz A: sekret BEZ hasła.
-  // Generujemy losowy klucz, który trafi do fragmentu URL.
   if (!password) {
     const key = await generateEncryptionKey();
     const encrypted = await encryptData(plaintext, key);
@@ -75,10 +65,6 @@ export async function encryptSecret(
     };
   }
 
-  // Scenariusz B: sekret CHRONIONY HASŁEM.
-  // Klucz wyprowadzamy z hasła + losowej soli. Sól zapisujemy jawnie
-  // w bazie (jest bezpieczna do ujawnienia). Klucza NIE umieszczamy
-  // w URL — bo sam link, bez znajomości hasła, ma nie wystarczać.
   const salt = generateSalt();
   const key = await deriveKeyFromPassword(password, salt);
   const encrypted = await encryptData(plaintext, key);
@@ -94,16 +80,6 @@ export async function encryptSecret(
   };
 }
 
-/**
- * Główna funkcja deszyfrująca. Wywoływana na stronie odbiorcy
- * (Etap 5), gdy ładuje zaszyfrowany sekret z Supabase.
- * 
- * @param payload - dane pobrane z bazy Supabase
- * @param keyFromUrl - klucz wyciągnięty z fragmentu URL (#k=...),
- *   wymagany TYLKO gdy sekret NIE jest chroniony hasłem
- * @param password - hasło wpisane przez odbiorcę, wymagane TYLKO
- *   gdy payload.isPasswordProtected === true
- */
 export async function decryptSecret(
   payload: VaultifyEncryptedSecret,
   keyFromUrl?: string,
@@ -126,12 +102,87 @@ export async function decryptSecret(
     key = await importKeyFromBase64Url(keyFromUrl);
   }
 
-  return decryptData(
-    { ciphertext: payload.ciphertext, iv: payload.iv },
-    key
-  );
+  return decryptData({ ciphertext: payload.ciphertext, iv: payload.iv }, key);
 }
 
-// Re-eksportujemy typ EncryptedPayload na wypadek, gdyby był
-// potrzebny gdzieś indziej w aplikacji.
+// ============================================================
+// NOWE API — pozwala szyfrować JEDNYM wspólnym kluczem zarówno
+// tekst, jak i plik (potrzebne do Etapu 7: udostępniania plików).
+// ============================================================
+
+/**
+ * Tworzy klucz szyfrujący sesji — albo losowy (trafi do URL),
+ * albo wyprowadzony z hasła.
+ */
+export async function createEncryptionKey(password?: string): Promise<{
+  key: CryptoKey;
+  keyForUrl: string | null;
+  salt: string | null;
+  isPasswordProtected: boolean;
+}> {
+  if (!password) {
+    const key = await generateEncryptionKey();
+    const keyForUrl = await exportKeyToBase64Url(key);
+    return { key, keyForUrl, salt: null, isPasswordProtected: false };
+  }
+
+  const saltBytes = generateSalt();
+  const key = await deriveKeyFromPassword(password, saltBytes);
+  return {
+    key,
+    keyForUrl: null,
+    salt: saltToBase64Url(saltBytes),
+    isPasswordProtected: true,
+  };
+}
+
+export async function encryptTextWithKey(
+  plaintext: string,
+  key: CryptoKey
+): Promise<EncryptedPayload> {
+  return encryptData(plaintext, key);
+}
+
+export async function decryptTextWithKey(
+  payload: EncryptedPayload,
+  key: CryptoKey
+): Promise<string> {
+  return decryptData(payload, key);
+}
+
+/** Szyfruje plik (File z <input type="file">) podanym kluczem. */
+export async function encryptFileWithKey(
+  file: File,
+  key: CryptoKey
+): Promise<EncryptedPayload> {
+  const buffer = await file.arrayBuffer();
+  return encryptBuffer(buffer, key);
+}
+
+/** Odszyfrowuje surowe bajty pliku, zwraca ArrayBuffer gotowy do Blob(). */
+export async function decryptFileWithKey(
+  payload: EncryptedPayload,
+  key: CryptoKey
+): Promise<ArrayBuffer> {
+  return decryptBuffer(payload, key);
+}
+
+/**
+ * Odtwarza obiekt CryptoKey z klucza w URL albo hasła + soli —
+ * używane po stronie odbiorcy, zanim odszyfrujemy cokolwiek.
+ */
+export async function resolveDecryptionKey(
+  keyFromUrl?: string,
+  password?: string,
+  salt?: string | null
+): Promise<CryptoKey> {
+  if (password && salt) {
+    return deriveKeyFromPassword(password, base64UrlToSalt(salt));
+  }
+  if (keyFromUrl) {
+    return importKeyFromBase64Url(keyFromUrl);
+  }
+  throw new Error("Brak klucza lub hasła potrzebnego do odszyfrowania.");
+}
+
 export type { EncryptedPayload };

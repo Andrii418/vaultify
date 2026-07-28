@@ -2,7 +2,16 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, ShieldCheck, Copy, Check, Loader2, Flame } from "lucide-react";
+import {
+  Lock,
+  ShieldCheck,
+  Copy,
+  Check,
+  Loader2,
+  Flame,
+  Paperclip,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -16,11 +25,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { encryptSecret } from "@/lib/crypto";
+import {
+  createEncryptionKey,
+  encryptTextWithKey,
+  encryptFileWithKey,
+} from "@/lib/crypto";
 
-// Znaki używane w efekcie "scramble" pod polem tekstowym —
-// mieszanka cyfr szesnastkowych i znaków Base64URL, żeby wyglądało
-// jak prawdziwy szyfrogram, a nie przypadkowy tekst.
 const CIPHER_CHARS = "ABCDEF0123456789-_abcdef";
 
 function scrambleText(length: number): string {
@@ -31,13 +41,14 @@ function scrambleText(length: number): string {
   return out;
 }
 
-// Opcje czasu życia sekretu — wartość w milisekundach.
 const TTL_OPTIONS = [
   { label: "5 minut", value: 5 * 60 * 1000 },
   { label: "1 godzina", value: 60 * 60 * 1000 },
   { label: "24 godziny", value: 24 * 60 * 60 * 1000 },
   { label: "7 dni", value: 7 * 24 * 60 * 60 * 1000 },
 ];
+
+const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
 
 export function SecretComposer() {
   const [secretText, setSecretText] = useState("");
@@ -49,12 +60,13 @@ export function SecretComposer() {
   const [isCreating, setIsCreating] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-  const scrambleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  // EFEKT SYGNATUROWY: dopóki użytkownik pisze, co 80ms losujemy
-  // nowy "szyfrogram" tej samej długości co wpisany tekst. To
-  // wizualnie demonstruje ideę Zero-Knowledge na żywo — nikt,
-  // nawet Vaultify, nie zobaczy prawdziwej treści.
+  const scrambleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null
+  );
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     if (secretText.length === 0) {
       setScrambled("");
@@ -71,9 +83,20 @@ export function SecretComposer() {
     };
   }, [secretText.length]);
 
+  function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error("Plik jest za duży. Maksymalny rozmiar to 4MB.");
+      e.target.value = "";
+      return;
+    }
+    setSelectedFile(file);
+  }
+
   async function handleCreateSecret() {
-    if (!secretText.trim()) {
-      toast.error("Wpisz treść, którą chcesz bezpiecznie udostępnić.");
+    if (!secretText.trim() && !selectedFile) {
+      toast.error("Wpisz treść lub dołącz plik, który chcesz udostępnić.");
       return;
     }
     if (isPasswordProtected && password.length < 4) {
@@ -84,24 +107,55 @@ export function SecretComposer() {
     setIsCreating(true);
 
     try {
-      const { payload, keyForUrl } = await encryptSecret(
-        secretText,
-        isPasswordProtected ? password : undefined
-      );
+      // Jeden wspólny klucz dla wiadomości i pliku
+      const {
+        key,
+        keyForUrl,
+        salt,
+        isPasswordProtected: isProtected,
+      } = await createEncryptionKey(isPasswordProtected ? password : undefined);
 
-      const expiresAt = new Date(Date.now() + Number(ttl));
+      const meta: Record<string, unknown> = {
+        salt,
+        is_password_protected: isProtected,
+        burn_after_reading: burnAfterReading,
+        expires_at: new Date(Date.now() + Number(ttl)).toISOString(),
+      };
+
+      if (secretText.trim()) {
+        const textPayload = await encryptTextWithKey(secretText, key);
+        meta.ciphertext = textPayload.ciphertext;
+        meta.iv = textPayload.iv;
+      }
+
+      const formData = new FormData();
+
+      if (selectedFile) {
+        const filePayload = await encryptFileWithKey(selectedFile, key);
+        meta.file_iv = filePayload.iv;
+        meta.file_name = selectedFile.name;
+        meta.file_mime = selectedFile.type || "application/octet-stream";
+        meta.file_size_original = selectedFile.size;
+
+        // Zaszyfrowane bajty (Base64URL) rozpakowujemy z powrotem
+        // do surowych bajtów, żeby wysłać je jako prawdziwy plik
+        // binarny w FormData, a nie jako tekst.
+        const normalizedBase64 = filePayload.ciphertext
+          .replace(/-/g, "+")
+          .replace(/_/g, "/");
+        const binaryString = atob(normalizedBase64);
+        const encryptedBytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          encryptedBytes[i] = binaryString.charCodeAt(i);
+        }
+        formData.append("file", new Blob([encryptedBytes]), "encrypted.bin");
+      }
+
+      formData.append("meta", JSON.stringify(meta));
 
       const response = await fetch("/api/create-secret", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ciphertext: payload.ciphertext,
-          iv: payload.iv,
-          salt: payload.salt,
-          is_password_protected: payload.isPasswordProtected,
-          burn_after_reading: burnAfterReading,
-          expires_at: expiresAt.toISOString(),
-        }),
+        body: formData,
       });
 
       const result = await response.json();
@@ -113,7 +167,6 @@ export function SecretComposer() {
       }
 
       const newId = result.id;
-
       const baseUrl = `${window.location.origin}/s/${newId}`;
       const finalLink = keyForUrl ? `${baseUrl}#k=${keyForUrl}` : baseUrl;
 
@@ -139,12 +192,13 @@ export function SecretComposer() {
     setSecretText("");
     setPassword("");
     setIsPasswordProtected(false);
+    setSelectedFile(null);
     setGeneratedLink(null);
   }
 
   return (
     <div className="w-full max-w-2xl mx-auto">
-      {/* ============ HERO — nagłówek wartości ============ */}
+      {/* ============ HERO ============ */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -175,7 +229,6 @@ export function SecretComposer() {
       >
         <AnimatePresence mode="wait">
           {!generatedLink ? (
-            // ---------- WIDOK 1: EDYTOR ----------
             <motion.div
               key="editor"
               initial={{ opacity: 0 }}
@@ -190,8 +243,6 @@ export function SecretComposer() {
                   onChange={(e) => setSecretText(e.target.value)}
                   className="min-h-[140px] bg-black/30 border-white/10 focus-visible:ring-primary/50 font-mono-vaultify text-sm resize-none"
                 />
-                {/* Element sygnaturowy: podgląd na żywo, jak treść
-                    zamienia się w migoczący szyfrogram */}
                 <AnimatePresence>
                   {scrambled && (
                     <motion.div
@@ -206,6 +257,45 @@ export function SecretComposer() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+              </div>
+
+              {/* Załącznik pliku */}
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                {!selectedFile ? (
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full flex items-center gap-2 justify-center rounded-xl border border-dashed border-white/15 hover:border-primary/40 bg-white/[0.02] px-4 py-3 text-sm text-muted-foreground transition-colors"
+                  >
+                    <Paperclip className="w-4 h-4" />
+                    Dołącz plik (max 4MB)
+                  </button>
+                ) : (
+                  <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Paperclip className="w-4 h-4 text-primary shrink-0" />
+                      <span className="text-sm truncate">
+                        {selectedFile.name}
+                      </span>
+                      <span className="text-xs text-muted-foreground shrink-0">
+                        ({Math.round(selectedFile.size / 1024)} KB)
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFile(null)}
+                      className="text-muted-foreground hover:text-destructive shrink-0"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Opcja: ochrona hasłem */}
@@ -273,16 +363,13 @@ export function SecretComposer() {
                   Link wygaśnie za
                 </Label>
                 <Select
-  value={ttl}
-  onValueChange={(value) => {
-    // Base UI's Select może technicznie zwrócić null (np. gdy
-    // wybór zostanie wyczyszczony) — w Vaultify zawsze musi być
-    // wybrana jakaś opcja, więc w takim wypadku wracamy do domyślnej.
-    if (value !== null) {
-      setTtl(value);
-    }
-  }}
->
+                  value={ttl}
+                  onValueChange={(value) => {
+                    if (value !== null) {
+                      setTtl(value);
+                    }
+                  }}
+                >
                   <SelectTrigger className="bg-black/30 border-white/10">
                     <SelectValue />
                   </SelectTrigger>
@@ -312,7 +399,6 @@ export function SecretComposer() {
               </Button>
             </motion.div>
           ) : (
-            // ---------- WIDOK 2: WYNIK (link gotowy) ----------
             <motion.div
               key="result"
               initial={{ opacity: 0, scale: 0.98 }}

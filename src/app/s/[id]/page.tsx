@@ -12,52 +12,109 @@ import {
   Check,
   Loader2,
   KeyRound,
+  Download,
+  Paperclip,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
-import { decryptSecret } from "@/lib/crypto";
+import {
+  decryptTextWithKey,
+  decryptFileWithKey,
+  resolveDecryptionKey,
+} from "@/lib/crypto";
 import { createClient } from "@/lib/supabase/client";
 import type { BurnedSecretResult } from "@/lib/supabase/types";
 
-// Możliwe stany, w jakich może znajdować się ta strona.
 type ViewState =
-  | "loading" // Trwa pierwsze zapytanie do bazy (sprawdzamy czy sekret istnieje)
-  | "needs-password" // Sekret istnieje, ale wymaga hasła do odszyfrowania
-  | "decrypting" // Trwa deszyfrowanie (po podaniu hasła albo od razu)
-  | "revealed" // Sukces — treść jest widoczna
-  | "not-found" // RPC zwróciło SECRET_NOT_FOUND
-  | "expired" // RPC zwróciło SECRET_EXPIRED
-  | "already-viewed" // RPC zwróciło SECRET_ALREADY_VIEWED
-  | "missing-key" // Brak #k=... w URL, a sekret nie jest chroniony hasłem
-  | "wrong-password"; // Hasło zostało podane, ale deszyfrowanie się nie udało
+  | "loading"
+  | "needs-password"
+  | "decrypting"
+  | "revealed"
+  | "not-found"
+  | "expired"
+  | "already-viewed"
+  | "missing-key"
+  | "wrong-password";
 
 export default function SecretViewPage() {
   const params = useParams<{ id: string }>();
   const [state, setState] = useState<ViewState>("loading");
   const [decryptedText, setDecryptedText] = useState<string>("");
+  const [decryptedFile, setDecryptedFile] = useState<{
+    blob: Blob;
+    name: string;
+  } | null>(null);
   const [password, setPassword] = useState("");
   const [copied, setCopied] = useState(false);
 
-  // Przechowujemy surowy wynik z RPC między próbami — potrzebne,
-  // żeby po nieudanej próbie hasła spróbować ponownie BEZ drugiego
-  // wywołania RPC (bo drugie wywołanie i tak zwróciłoby błąd —
-  // sekret bez `burn_after_reading=false` już nie istnieje po
-  // pierwszym udanym pobraniu z bazy!).
   const [burnedPayload, setBurnedPayload] = useState<BurnedSecretResult | null>(
     null
   );
   const [keyFromUrl, setKeyFromUrl] = useState<string | undefined>(undefined);
 
+  // Wspólna logika deszyfrowania tekstu I/LUB pliku — wywoływana
+  // zarówno przy pierwszej próbie (bez hasła), jak i po wpisaniu hasła.
+  // Umieszczona na poziomie komponentu (nie wewnątrz useEffect), żeby
+  // handlePasswordSubmit też miał do niej dostęp.
+  async function decryptEverything(
+    data: BurnedSecretResult,
+    urlKey?: string,
+    pwd?: string
+  ) {
+    const key = await resolveDecryptionKey(urlKey, pwd, data.salt);
+
+    if (data.ciphertext && data.iv) {
+      const text = await decryptTextWithKey(
+        { ciphertext: data.ciphertext, iv: data.iv },
+        key
+      );
+      setDecryptedText(text);
+    }
+
+    if (data.file_path && data.file_iv && data.file_name) {
+      // Pobieramy zaszyfrowane bajty pliku z naszego serwera — ten
+      // sam request natychmiast usuwa plik ze Storage po stronie serwera.
+      const res = await fetch("/api/download-file", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: data.file_path }),
+      });
+
+      if (!res.ok) throw new Error("FILE_DOWNLOAD_FAILED");
+
+      const encryptedBytes = await res.arrayBuffer();
+
+      // Konwertujemy surowe bajty na Base64URL, żeby pasowały do
+      // formatu, jakiego oczekuje nasz silnik kryptograficzny.
+      let binaryString = "";
+      const bytes = new Uint8Array(encryptedBytes);
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binaryString += String.fromCharCode(bytes[i]);
+      }
+      const base64Url = btoa(binaryString)
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+
+      const fileBuffer = await decryptFileWithKey(
+        { ciphertext: base64Url, iv: data.file_iv },
+        key
+      );
+
+      const blob = new Blob([fileBuffer], {
+        type: data.file_mime || "application/octet-stream",
+      });
+      setDecryptedFile({ blob, name: data.file_name });
+    }
+  }
+
   useEffect(() => {
     async function fetchAndAttemptDecrypt() {
       // Fragment URL (#k=...) jest dostępny WYŁĄCZNIE w przeglądarce,
-      // nigdy na serwerze — dlatego ten kod musi być w useEffect,
-      // które uruchamia się tylko po stronie klienta.
-      const hash = window.location.hash; // np. "#k=xY9z..."
-      const extractedKey = hash.startsWith("#k=")
-        ? hash.slice(3)
-        : undefined;
+      // nigdy na serwerze — dlatego ten kod musi być w useEffect.
+      const hash = window.location.hash;
+      const extractedKey = hash.startsWith("#k=") ? hash.slice(3) : undefined;
       setKeyFromUrl(extractedKey);
 
       const supabase = createClient();
@@ -66,7 +123,6 @@ export default function SecretViewPage() {
         .single<BurnedSecretResult>();
 
       if (error) {
-        // Rozpoznajemy nasze własne, nazwane błędy z funkcji SQL
         if (error.message.includes("SECRET_NOT_FOUND")) {
           setState("not-found");
         } else if (error.message.includes("SECRET_EXPIRED")) {
@@ -74,7 +130,7 @@ export default function SecretViewPage() {
         } else if (error.message.includes("SECRET_ALREADY_VIEWED")) {
           setState("already-viewed");
         } else {
-          setState("not-found"); // domyślny, bezpieczny fallback
+          setState("not-found");
         }
         return;
       }
@@ -82,31 +138,17 @@ export default function SecretViewPage() {
       setBurnedPayload(data);
 
       if (data.is_password_protected) {
-        // Czekamy, aż użytkownik wpisze hasło — nie próbujemy
-        // deszyfrować jeszcze niczego.
         setState("needs-password");
         return;
       }
 
       if (!extractedKey) {
-        // Sekret NIE jest chroniony hasłem, ale w URL brakuje klucza —
-        // to oznacza niekompletny/uszkodzony link.
         setState("missing-key");
         return;
       }
 
-      // Mamy wszystko czego potrzeba — deszyfrujemy od razu.
       try {
-        const plaintext = await decryptSecret(
-          {
-            ciphertext: data.ciphertext,
-            iv: data.iv,
-            salt: data.salt,
-            isPasswordProtected: data.is_password_protected,
-          },
-          extractedKey
-        );
-        setDecryptedText(plaintext);
+        await decryptEverything(data, extractedKey, undefined);
         setState("revealed");
       } catch {
         setState("wrong-password");
@@ -122,24 +164,13 @@ export default function SecretViewPage() {
 
     setState("decrypting");
     try {
-      const plaintext = await decryptSecret(
-        {
-          ciphertext: burnedPayload.ciphertext,
-          iv: burnedPayload.iv,
-          salt: burnedPayload.salt,
-          isPasswordProtected: burnedPayload.is_password_protected,
-        },
-        keyFromUrl,
-        password
-      );
-      setDecryptedText(plaintext);
+      await decryptEverything(burnedPayload, keyFromUrl, password);
       setState("revealed");
     } catch {
-      // Złe hasło — wracamy do formularza, żeby spróbować ponownie.
-      // WAŻNE: sam sekret już został "spalony" po stronie bazy przy
-      // pierwszym odczycie (jeśli burn_after_reading=true), ale my
-      // wciąż mamy jego zaszyfrowaną treść lokalnie w `burnedPayload`,
-      // więc kolejne próby hasła nie wymagają nowego zapytania do bazy.
+      // Złe hasło — sekret w bazie mógł być już "spalony" przy
+      // pierwszym odczycie, ale zaszyfrowaną treść wciąż mamy
+      // lokalnie w `burnedPayload`, więc kolejne próby hasła NIE
+      // wymagają nowego zapytania do bazy.
       setState("needs-password");
       toast.error("Nieprawidłowe hasło. Spróbuj ponownie.");
     }
@@ -150,6 +181,16 @@ export default function SecretViewPage() {
     setCopied(true);
     toast.success("Skopiowano do schowka.");
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleDownloadFile() {
+    if (!decryptedFile) return;
+    const url = URL.createObjectURL(decryptedFile.blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = decryptedFile.name;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -235,45 +276,72 @@ export default function SecretViewPage() {
                   Ten sekret został właśnie zniszczony na serwerze
                 </div>
 
-                {/* Efekt odsłonięcia: tekst "wywija się" z rozmycia */}
-                <motion.div
-                  initial={{ filter: "blur(8px)", opacity: 0 }}
-                  animate={{ filter: "blur(0px)", opacity: 1 }}
-                  transition={{ duration: 0.6, ease: "easeOut" }}
-                  className="rounded-xl border border-white/10 bg-black/30 p-4"
-                >
-                  <p className="font-mono-vaultify text-sm whitespace-pre-wrap break-words text-foreground/95">
-                    {decryptedText}
-                  </p>
-                </motion.div>
+                {decryptedText && (
+                  <motion.div
+                    initial={{ filter: "blur(8px)", opacity: 0 }}
+                    animate={{ filter: "blur(0px)", opacity: 1 }}
+                    transition={{ duration: 0.6, ease: "easeOut" }}
+                    className="rounded-xl border border-white/10 bg-black/30 p-4"
+                  >
+                    <p className="font-mono-vaultify text-sm whitespace-pre-wrap break-words text-foreground/95">
+                      {decryptedText}
+                    </p>
+                  </motion.div>
+                )}
 
-                <Button
-                  onClick={handleCopy}
-                  variant="secondary"
-                  className="w-full bg-white/5 hover:bg-white/10 h-11"
-                >
-                  <AnimatePresence mode="wait">
-                    {copied ? (
-                      <motion.span
-                        key="check"
-                        className="flex items-center gap-2"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                      >
-                        <Check className="w-4 h-4 text-accent" /> Skopiowano
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key="copy"
-                        className="flex items-center gap-2"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                      >
-                        <Copy className="w-4 h-4" /> Kopiuj do schowka
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </Button>
+                {decryptedFile && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: 0.1 }}
+                    className="rounded-xl border border-white/10 bg-black/30 p-4 flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Paperclip className="w-4 h-4 text-primary shrink-0" />
+                      <span className="text-sm truncate">
+                        {decryptedFile.name}
+                      </span>
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={handleDownloadFile}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
+                    >
+                      <Download className="w-4 h-4 mr-1.5" />
+                      Pobierz
+                    </Button>
+                  </motion.div>
+                )}
+
+                {decryptedText && (
+                  <Button
+                    onClick={handleCopy}
+                    variant="secondary"
+                    className="w-full bg-white/5 hover:bg-white/10 h-11"
+                  >
+                    <AnimatePresence mode="wait">
+                      {copied ? (
+                        <motion.span
+                          key="check"
+                          className="flex items-center gap-2"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                        >
+                          <Check className="w-4 h-4 text-accent" /> Skopiowano
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key="copy"
+                          className="flex items-center gap-2"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                        >
+                          <Copy className="w-4 h-4" /> Kopiuj do schowka
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </Button>
+                )}
 
                 <p className="text-xs text-center text-muted-foreground">
                   Ten link nie zadziała ponownie — zapisz treść, jeśli jej
@@ -327,8 +395,6 @@ export default function SecretViewPage() {
   );
 }
 
-// Mały pomocniczy komponent, żeby nie powtarzać tej samej struktury
-// JSX dla czterech różnych stanów błędu.
 function ErrorState({
   icon,
   title,
