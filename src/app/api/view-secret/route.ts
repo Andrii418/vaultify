@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+
 
 interface RpcResult {
   ciphertext: string | null;
@@ -44,13 +46,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: code }, { status });
     }
 
-    // Wysyłka powiadomienia e-mail — CELOWO poza krytyczną ścieżką:
-    // jeśli wysyłka się nie powiedzie, odbiorca i tak dostaje swój
-    // sekret bez przeszkód. Błąd e-maila nie może zablokować odczytu.
+    // Wysyłka powiadomienia e-mail — planujemy ją przez after(),
+    // które gwarantuje dokończenie zadania w tle NAWET PO wysłaniu
+    // odpowiedzi do przeglądarki. Bez tego Vercel może przedwcześnie
+    // zamrozić funkcję, zanim fetch() do Resend zdąży się zakończyć
+    // (dokładnie to powodowało błąd "write ETIMEDOUT").
     if (data.notify_email && process.env.RESEND_API_KEY) {
-      sendViewNotification(data.notify_email).catch((err) =>
-        console.error("Nie udało się wysłać powiadomienia e-mail:", err)
-      );
+      const emailToNotify = data.notify_email;
+      after(async () => {
+        try {
+          await sendViewNotification(emailToNotify);
+        } catch (err) {
+          console.error("Nie udało się wysłać powiadomienia e-mail:", err);
+        }
+      });
     }
 
     // Nigdy nie zwracamy notify_email z powrotem do przeglądarki —
