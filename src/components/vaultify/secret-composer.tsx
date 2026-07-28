@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { QRCodeSVG } from "qrcode.react";
 import {
   Lock,
   ShieldCheck,
@@ -11,6 +12,7 @@ import {
   Flame,
   Paperclip,
   X,
+  QrCode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -61,6 +63,7 @@ export function SecretComposer() {
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [showQr, setShowQr] = useState(false);
 
   const scrambleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null
@@ -194,6 +197,7 @@ export function SecretComposer() {
     setIsPasswordProtected(false);
     setSelectedFile(null);
     setGeneratedLink(null);
+    setShowQr(false);
   }
 
   return (
@@ -448,6 +452,45 @@ export function SecretComposer() {
                   </AnimatePresence>
                 </Button>
               </div>
+
+              {/* Przełącznik widoczności kodu QR */}
+              <button
+                type="button"
+                onClick={() => setShowQr((prev) => !prev)}
+                className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
+              >
+                <QrCode className="w-4 h-4" />
+                {showQr ? "Ukryj kod QR" : "Pokaż kod QR"}
+              </button>
+
+              <AnimatePresence>
+                {showQr && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex justify-center p-5 bg-white rounded-xl">
+                      {/* Kod QR generowany w 100% lokalnie w przeglądarce —
+                          link (razem z kluczem deszyfrującym w #k=...)
+                          NIGDY nie opuszcza tego urządzenia. Białe tło jest
+                          konieczne — skanery QR wymagają wysokiego
+                          kontrastu, którego nasz obsydianowy motyw
+                          by nie zapewnił. */}
+                      <QRCodeSVG
+                        value={generatedLink}
+                        size={180}
+                        level="M"
+                        marginSize={0}
+                      />
+                    </div>
+                    <p className="text-xs text-center text-muted-foreground mt-2">
+                      Zeskanuj telefonem, żeby otworzyć link
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               <Button
                 onClick={handleReset}
