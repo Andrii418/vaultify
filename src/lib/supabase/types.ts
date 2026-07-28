@@ -40,4 +40,6 @@ export interface BurnedSecretResult {
   file_name: string | null;
   file_mime: string | null;
   file_size: number | null;
+  is_final_view: boolean;
+  remaining_views: number | null;
 }

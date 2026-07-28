@@ -14,6 +14,7 @@ import {
   KeyRound,
   Download,
   Paperclip,
+  Eye,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -272,8 +273,24 @@ export default function SecretViewPage() {
                 className="space-y-5"
               >
                 <div className="flex items-center gap-2 text-accent text-xs font-mono-vaultify uppercase tracking-wider">
-                  <Flame className="w-3.5 h-3.5" />
-                  Ten sekret został właśnie zniszczony na serwerze
+                  {burnedPayload?.is_final_view ? (
+                    <>
+                      <Flame className="w-3.5 h-3.5" />
+                      Ten sekret został właśnie zniszczony na serwerze
+                    </>
+                  ) : burnedPayload?.remaining_views !== null &&
+                    burnedPayload?.remaining_views !== undefined ? (
+                    <>
+                      <Eye className="w-3.5 h-3.5" />
+                      Pozostało jeszcze {burnedPayload.remaining_views}{" "}
+                      {burnedPayload.remaining_views === 1 ? "odczyt" : "odczyty(ów)"}
+                    </>
+                  ) : (
+                    <>
+                      <Eye className="w-3.5 h-3.5" />
+                      Ten link pozostanie aktywny aż wygaśnie
+                    </>
+                  )}
                 </div>
 
                 {decryptedText && (

@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
       iv,
       salt,
       is_password_protected,
-      burn_after_reading,
+      max_views,
       expires_at,
     } = meta;
 
@@ -117,13 +117,18 @@ export async function POST(request: NextRequest) {
       fileSize = meta.file_size_original;
     }
 
+    // Jeśli sekret zawiera plik, WYMUSZAMY limit = 1 odczyt,
+    // niezależnie od tego, co przyszło z formularza — plik musi
+    // zniknąć ze Storage od razu po pierwszym pobraniu.
+    const finalMaxViews: number | null = file ? 1 : max_views ?? null;
+
     const { error: insertError } = await supabase.from("secrets").insert({
       id: newId,
       ciphertext: ciphertext ?? null,
       iv: iv ?? null,
       salt,
       is_password_protected,
-      burn_after_reading,
+      max_views: finalMaxViews,
       expires_at,
       file_path: filePath,
       file_iv: fileIv,

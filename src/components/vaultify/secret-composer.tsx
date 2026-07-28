@@ -9,7 +9,7 @@ import {
   Copy,
   Check,
   Loader2,
-  Flame,
+  Eye,
   Paperclip,
   X,
   QrCode,
@@ -50,6 +50,15 @@ const TTL_OPTIONS = [
   { label: "7 dni", value: 7 * 24 * 60 * 60 * 1000 },
 ];
 
+// Wartość "unlimited" oznacza brak limitu — sekret żyje aż wygaśnie.
+const VIEW_LIMIT_OPTIONS = [
+  { label: "1 raz (spal po odczycie)", value: "1" },
+  { label: "3 razy", value: "3" },
+  { label: "5 razy", value: "5" },
+  { label: "10 razy", value: "10" },
+  { label: "Bez limitu (do wygaśnięcia)", value: "unlimited" },
+];
+
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
 
 export function SecretComposer() {
@@ -57,7 +66,7 @@ export function SecretComposer() {
   const [scrambled, setScrambled] = useState("");
   const [password, setPassword] = useState("");
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
-  const [burnAfterReading, setBurnAfterReading] = useState(true);
+  const [viewLimit, setViewLimit] = useState("1");
   const [ttl, setTtl] = useState(String(TTL_OPTIONS[1].value));
   const [isCreating, setIsCreating] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
@@ -95,6 +104,8 @@ export function SecretComposer() {
       return;
     }
     setSelectedFile(file);
+    // Plik wymusza limit 1 odczytu — patrz wyjaśnienie w Kroku 3.
+    setViewLimit("1");
   }
 
   async function handleCreateSecret() {
@@ -110,7 +121,6 @@ export function SecretComposer() {
     setIsCreating(true);
 
     try {
-      // Jeden wspólny klucz dla wiadomości i pliku
       const {
         key,
         keyForUrl,
@@ -118,10 +128,12 @@ export function SecretComposer() {
         isPasswordProtected: isProtected,
       } = await createEncryptionKey(isPasswordProtected ? password : undefined);
 
+      const maxViews = viewLimit === "unlimited" ? null : Number(viewLimit);
+
       const meta: Record<string, unknown> = {
         salt,
         is_password_protected: isProtected,
-        burn_after_reading: burnAfterReading,
+        max_views: maxViews,
         expires_at: new Date(Date.now() + Number(ttl)).toISOString(),
       };
 
@@ -140,9 +152,6 @@ export function SecretComposer() {
         meta.file_mime = selectedFile.type || "application/octet-stream";
         meta.file_size_original = selectedFile.size;
 
-        // Zaszyfrowane bajty (Base64URL) rozpakowujemy z powrotem
-        // do surowych bajtów, żeby wysłać je jako prawdziwy plik
-        // binarny w FormData, a nie jako tekst.
         const normalizedBase64 = filePayload.ciphertext
           .replace(/-/g, "+")
           .replace(/_/g, "/");
@@ -196,6 +205,7 @@ export function SecretComposer() {
     setPassword("");
     setIsPasswordProtected(false);
     setSelectedFile(null);
+    setViewLimit("1");
     setGeneratedLink(null);
     setShowQr(false);
   }
@@ -341,24 +351,35 @@ export function SecretComposer() {
                 )}
               </AnimatePresence>
 
-              {/* Opcja: spal po odczycie */}
-              <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
-                <div className="flex items-center gap-3">
-                  <Flame className="w-4 h-4 text-muted-foreground" />
-                  <div>
-                    <Label htmlFor="burn-toggle" className="text-sm font-medium">
-                      Usuń natychmiast po odczycie
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Sekret zniknie po pierwszym otwarciu linku
-                    </p>
-                  </div>
-                </div>
-                <Switch
-                  id="burn-toggle"
-                  checked={burnAfterReading}
-                  onCheckedChange={setBurnAfterReading}
-                />
+              {/* Limit liczby odczytów */}
+              <div>
+                <Label className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <Eye className="w-4 h-4 text-muted-foreground" />
+                  Ile razy sekret może zostać odczytany?
+                </Label>
+                <Select
+                  value={viewLimit}
+                  onValueChange={(value) => {
+                    if (value !== null) setViewLimit(value);
+                  }}
+                  disabled={!!selectedFile}
+                >
+                  <SelectTrigger className="bg-black/30 border-white/10">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VIEW_LIMIT_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedFile && (
+                  <p className="text-xs text-muted-foreground mt-1.5">
+                    Sekrety z załącznikiem zawsze mają limit 1 odczytu.
+                  </p>
+                )}
               </div>
 
               {/* Wybór czasu życia */}
@@ -369,9 +390,7 @@ export function SecretComposer() {
                 <Select
                   value={ttl}
                   onValueChange={(value) => {
-                    if (value !== null) {
-                      setTtl(value);
-                    }
+                    if (value !== null) setTtl(value);
                   }}
                 >
                   <SelectTrigger className="bg-black/30 border-white/10">
@@ -453,7 +472,6 @@ export function SecretComposer() {
                 </Button>
               </div>
 
-              {/* Przełącznik widoczności kodu QR */}
               <button
                 type="button"
                 onClick={() => setShowQr((prev) => !prev)}
@@ -472,12 +490,6 @@ export function SecretComposer() {
                     className="overflow-hidden"
                   >
                     <div className="flex justify-center p-5 bg-white rounded-xl">
-                      {/* Kod QR generowany w 100% lokalnie w przeglądarce —
-                          link (razem z kluczem deszyfrującym w #k=...)
-                          NIGDY nie opuszcza tego urządzenia. Białe tło jest
-                          konieczne — skanery QR wymagają wysokiego
-                          kontrastu, którego nasz obsydianowy motyw
-                          by nie zapewnił. */}
                       <QRCodeSVG
                         value={generatedLink}
                         size={180}
