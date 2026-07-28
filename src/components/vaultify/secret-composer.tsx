@@ -13,6 +13,7 @@ import {
   Paperclip,
   X,
   QrCode,
+  Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -50,7 +51,6 @@ const TTL_OPTIONS = [
   { label: "7 dni", value: 7 * 24 * 60 * 60 * 1000 },
 ];
 
-// Wartość "unlimited" oznacza brak limitu — sekret żyje aż wygaśnie.
 const VIEW_LIMIT_OPTIONS = [
   { label: "1 raz (spal po odczycie)", value: "1" },
   { label: "3 razy", value: "3" },
@@ -67,6 +67,7 @@ export function SecretComposer() {
   const [password, setPassword] = useState("");
   const [isPasswordProtected, setIsPasswordProtected] = useState(false);
   const [viewLimit, setViewLimit] = useState("1");
+  const [notifyEmail, setNotifyEmail] = useState("");
   const [ttl, setTtl] = useState(String(TTL_OPTIONS[1].value));
   const [isCreating, setIsCreating] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string | null>(null);
@@ -104,7 +105,6 @@ export function SecretComposer() {
       return;
     }
     setSelectedFile(file);
-    // Plik wymusza limit 1 odczytu — patrz wyjaśnienie w Kroku 3.
     setViewLimit("1");
   }
 
@@ -135,6 +135,7 @@ export function SecretComposer() {
         is_password_protected: isProtected,
         max_views: maxViews,
         expires_at: new Date(Date.now() + Number(ttl)).toISOString(),
+        notify_email: notifyEmail.trim() || null,
       };
 
       if (secretText.trim()) {
@@ -206,6 +207,7 @@ export function SecretComposer() {
     setIsPasswordProtected(false);
     setSelectedFile(null);
     setViewLimit("1");
+    setNotifyEmail("");
     setGeneratedLink(null);
     setShowQr(false);
   }
@@ -380,6 +382,21 @@ export function SecretComposer() {
                     Sekrety z załącznikiem zawsze mają limit 1 odczytu.
                   </p>
                 )}
+              </div>
+
+              {/* Powiadomienie e-mail o odczycie */}
+              <div>
+                <Label className="text-sm font-medium mb-2 flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-muted-foreground" />
+                  Powiadom mnie e-mailem, gdy ktoś odczyta (opcjonalnie)
+                </Label>
+                <Input
+                  type="email"
+                  placeholder="twoj@email.com"
+                  value={notifyEmail}
+                  onChange={(e) => setNotifyEmail(e.target.value)}
+                  className="bg-black/30 border-white/10"
+                />
               </div>
 
               {/* Wybór czasu życia */}

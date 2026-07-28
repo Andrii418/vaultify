@@ -11,9 +11,6 @@ const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024; // 4MB
 
 export async function POST(request: NextRequest) {
   try {
-    // Odczytujemy jako FormData, bo żądanie może zawierać zarówno
-    // JSON (metadane) jak i binarny plik naraz — JSON sam w sobie
-    // tego nie obsłuży wygodnie.
     const formData = await request.formData();
     const metaRaw = formData.get("meta");
     const file = formData.get("file") as File | null;
@@ -30,6 +27,7 @@ export async function POST(request: NextRequest) {
       is_password_protected,
       max_views,
       expires_at,
+      notify_email,
     } = meta;
 
     if (!expires_at) {
@@ -48,6 +46,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Plik jest za duży. Maksymalny rozmiar to 4MB." },
         { status: 413 }
+      );
+    }
+    if (notify_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(notify_email)) {
+      return NextResponse.json(
+        { error: "Nieprawidłowy adres e-mail." },
+        { status: 400 }
       );
     }
 
@@ -90,8 +94,6 @@ export async function POST(request: NextRequest) {
     let fileMime: string | null = null;
     let fileSize: number | null = null;
 
-    // Plik przychodzi już ZASZYFROWANY z przeglądarki — my tylko
-    // zapisujemy go do Storage, nigdy nie widzimy oryginalnej treści.
     if (file) {
       const fileBuffer = await file.arrayBuffer();
       const storagePath = `${newId}/encrypted.bin`;
@@ -135,12 +137,11 @@ export async function POST(request: NextRequest) {
       file_name: fileName,
       file_mime: fileMime,
       file_size: fileSize,
+      notify_email: notify_email || null,
     });
 
     if (insertError) {
       console.error("Insert failed:", insertError);
-      // Jeśli zapis wiersza się nie udał, a plik już wgraliśmy —
-      // sprzątamy po sobie, żeby nie zostawiać sierot w Storage.
       if (filePath) {
         await supabase.storage.from("secret-files").remove([filePath]);
       }

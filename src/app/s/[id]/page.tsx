@@ -24,7 +24,6 @@ import {
   decryptFileWithKey,
   resolveDecryptionKey,
 } from "@/lib/crypto";
-import { createClient } from "@/lib/supabase/client";
 import type { BurnedSecretResult } from "@/lib/supabase/types";
 
 type ViewState =
@@ -56,8 +55,6 @@ export default function SecretViewPage() {
 
   // Wspólna logika deszyfrowania tekstu I/LUB pliku — wywoływana
   // zarówno przy pierwszej próbie (bez hasła), jak i po wpisaniu hasła.
-  // Umieszczona na poziomie komponentu (nie wewnątrz useEffect), żeby
-  // handlePasswordSubmit też miał do niej dostęp.
   async function decryptEverything(
     data: BurnedSecretResult,
     urlKey?: string,
@@ -74,8 +71,6 @@ export default function SecretViewPage() {
     }
 
     if (data.file_path && data.file_iv && data.file_name) {
-      // Pobieramy zaszyfrowane bajty pliku z naszego serwera — ten
-      // sam request natychmiast usuwa plik ze Storage po stronie serwera.
       const res = await fetch("/api/download-file", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -86,8 +81,6 @@ export default function SecretViewPage() {
 
       const encryptedBytes = await res.arrayBuffer();
 
-      // Konwertujemy surowe bajty na Base64URL, żeby pasowały do
-      // formatu, jakiego oczekuje nasz silnik kryptograficzny.
       let binaryString = "";
       const bytes = new Uint8Array(encryptedBytes);
       for (let i = 0; i < bytes.byteLength; i++) {
@@ -118,17 +111,21 @@ export default function SecretViewPage() {
       const extractedKey = hash.startsWith("#k=") ? hash.slice(3) : undefined;
       setKeyFromUrl(extractedKey);
 
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .rpc("get_and_burn_secret", { secret_id: params.id })
-        .single<BurnedSecretResult>();
+      // Odczyt sekretu idzie teraz przez nasz serwer (nie bezpośrednio
+      // z przeglądarki do Supabase) — to pozwala serwerowi bezpiecznie
+      // wysłać powiadomienie e-mail do nadawcy, korzystając z klucza
+      // API Resend, który nigdy nie może trafić do przeglądarki.
+      const res = await fetch("/api/view-secret", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: params.id }),
+      });
 
-      if (error) {
-        if (error.message.includes("SECRET_NOT_FOUND")) {
-          setState("not-found");
-        } else if (error.message.includes("SECRET_EXPIRED")) {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        if (body.error === "SECRET_EXPIRED") {
           setState("expired");
-        } else if (error.message.includes("SECRET_ALREADY_VIEWED")) {
+        } else if (body.error === "SECRET_ALREADY_VIEWED") {
           setState("already-viewed");
         } else {
           setState("not-found");
@@ -136,6 +133,7 @@ export default function SecretViewPage() {
         return;
       }
 
+      const data: BurnedSecretResult = await res.json();
       setBurnedPayload(data);
 
       if (data.is_password_protected) {
@@ -171,7 +169,7 @@ export default function SecretViewPage() {
       // Złe hasło — sekret w bazie mógł być już "spalony" przy
       // pierwszym odczycie, ale zaszyfrowaną treść wciąż mamy
       // lokalnie w `burnedPayload`, więc kolejne próby hasła NIE
-      // wymagają nowego zapytania do bazy.
+      // wymagają nowego zapytania do serwera.
       setState("needs-password");
       toast.error("Nieprawidłowe hasło. Spróbuj ponownie.");
     }
