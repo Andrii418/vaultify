@@ -214,26 +214,15 @@ export function SecretComposer() {
 
   return (
     <div className="w-full max-w-2xl mx-auto">
-      {/* ============ HERO ============ */}
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="text-center mb-10"
+        className="text-center mb-6"
       >
-        <div className="inline-flex items-center gap-2 font-mono-vaultify text-xs uppercase tracking-wider text-accent mb-4 px-3 py-1 rounded-full border border-white/10 bg-white/[0.02]">
-          <ShieldCheck className="w-3.5 h-3.5" />
-          Szyfrowanie Zero-Knowledge · AES-256-GCM
-        </div>
-        <h1 className="text-4xl sm:text-5xl font-semibold tracking-tight text-foreground mb-3">
-          Udostępnij sekret,
-          <br />
-          <span className="text-primary">którego nikt nie podejrzy.</span>
-        </h1>
-        <p className="text-muted-foreground text-base max-w-md mx-auto">
-          Treść szyfrujemy w Twojej przeglądarce, zanim cokolwiek trafi na
-          nasz serwer. My też jej nie zobaczymy.
-        </p>
+        <span className="font-mono-vaultify text-xs uppercase tracking-wider text-muted-foreground">
+          Zacznij tutaj
+        </span>
       </motion.div>
 
       {/* ============ PANEL EDYTORA / WYNIKU ============ */}
