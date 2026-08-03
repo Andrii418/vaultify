@@ -1,5 +1,6 @@
 "use client";
 
+import { PasswordStrengthMeter } from "@/components/vaultify/password-strength-meter";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
@@ -338,6 +339,7 @@ export function SecretComposer() {
                       onChange={(e) => setPassword(e.target.value)}
                       className="bg-black/30 border-white/10"
                     />
+                    <PasswordStrengthMeter password={password} />
                   </motion.div>
                 )}
               </AnimatePresence>
