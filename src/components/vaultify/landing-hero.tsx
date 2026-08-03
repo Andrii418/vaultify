@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, Lock, Flame, ChevronDown } from "lucide-react";
+import Link from "next/link";
 
 const DEMO_PLAINTEXT = "hasło_do_serwera_produkcyjnego";
 const CIPHER_CHARS = "ABCDEF0123456789-_abcdef";
@@ -138,6 +139,12 @@ export function LandingHero() {
         >
           Stworz bezpieczny link
         </button>
+        <Link
+          href="/how-it-works"
+          className="px-6 py-3 rounded-xl border border-white/10 hover:border-white/20 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Jak to dziala?
+        </Link>
         
           <a href="https://github.com/Andrii418/vaultify"
           target="_blank"
