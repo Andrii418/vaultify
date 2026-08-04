@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Toaster } from "sonner";
+import { LanguageProvider } from "@/lib/i18n/language-context";
+import { LanguageToggle } from "@/components/vaultify/language-toggle";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,14 +22,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // className="dark" wymusza nasz obsydianowy motyw z Kroku 4.1
-    // na stałe, niezależnie od ustawień systemowych użytkownika.
     <html lang="pl" className="dark">
       <body className="antialiased">
-        {children}
-        {/* Toaster z sonner — komponent renderujący powiadomienia
-            w prawym dolnym rogu, wywoływane przez funkcję toast()
-            gdziekolwiek w aplikacji. */}
+        <LanguageProvider>
+          {children}
+          <LanguageToggle />
+        </LanguageProvider>
         <Toaster
           theme="dark"
           position="bottom-right"

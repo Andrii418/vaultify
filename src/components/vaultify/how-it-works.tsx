@@ -2,29 +2,29 @@
 
 import { motion } from "framer-motion";
 import { PenLine, Link2, Flame } from "lucide-react";
-
-const STEPS = [
-  {
-    icon: PenLine,
-    title: "Piszesz i szyfrujesz lokalnie",
-    description:
-      "Treść jest szyfrowana algorytmem AES-256-GCM bezpośrednio w Twojej przeglądarce, zanim cokolwiek zostanie wysłane do sieci.",
-  },
-  {
-    icon: Link2,
-    title: "Wysyłasz jeden link",
-    description:
-      "Klucz deszyfrujący trafia do fragmentu adresu URL — przeglądarki z definicji nigdy nie wysyłają go do serwera.",
-  },
-  {
-    icon: Flame,
-    title: "Sekret znika po odczycie",
-    description:
-      "Odbiorca otwiera link, treść odszyfrowuje się w jego przeglądarce, a baza danych natychmiast usuwa sekret na zawsze.",
-  },
-];
+import { useLanguage } from "@/lib/i18n/language-context";
 
 export function HowItWorks() {
+  const { t } = useLanguage();
+
+  const steps = [
+    {
+      icon: PenLine,
+      title: t("how.step1.title"),
+      description: t("how.step1.desc"),
+    },
+    {
+      icon: Link2,
+      title: t("how.step2.title"),
+      description: t("how.step2.desc"),
+    },
+    {
+      icon: Flame,
+      title: t("how.step3.title"),
+      description: t("how.step3.desc"),
+    },
+  ];
+
   return (
     <section className="px-4 py-20 sm:py-28">
       <motion.div
@@ -35,15 +35,15 @@ export function HowItWorks() {
         className="text-center mb-14"
       >
         <span className="font-mono-vaultify text-xs uppercase tracking-wider text-accent">
-          Jak to działa
+          {t("how.eyebrow")}
         </span>
         <h2 className="text-3xl sm:text-4xl font-semibold tracking-tight text-foreground mt-3">
-          Trzy kroki, zero zaufania do serwera
+          {t("how.title")}
         </h2>
       </motion.div>
 
       <div className="max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-3 gap-6">
-        {STEPS.map((step, index) => {
+        {steps.map((step, index) => {
           const Icon = step.icon;
           return (
             <motion.div
@@ -58,7 +58,7 @@ export function HowItWorks() {
                 <Icon className="w-5 h-5 text-primary" />
               </div>
               <span className="font-mono-vaultify text-xs text-muted-foreground">
-                Krok {index + 1}
+                {index + 1}
               </span>
               <h3 className="text-base font-medium text-foreground mt-1 mb-2">
                 {step.title}

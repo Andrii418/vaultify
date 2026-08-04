@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, Lock, Flame, ChevronDown } from "lucide-react";
-import Link from "next/link";
+import { useLanguage } from "@/lib/i18n/language-context";
 
-const DEMO_PLAINTEXT = "hasło_do_serwera_produkcyjnego";
+const DEMO_PLAINTEXT_PL = "hasło_do_serwera_produkcyjnego";
+const DEMO_PLAINTEXT_EN = "production_server_password";
 const CIPHER_CHARS = "ABCDEF0123456789-_abcdef";
 
 function scrambleLike(text: string): string {
@@ -30,23 +31,28 @@ function GithubIcon({ className }: { className?: string }) {
 }
 
 export function LandingHero() {
+  const { locale, t } = useLanguage();
   const [showCiphertext, setShowCiphertext] = useState(false);
-  const [scrambled, setScrambled] = useState(() => scrambleLike(DEMO_PLAINTEXT));
+  const [scrambled, setScrambled] = useState("");
+
+  const demoPlaintext = locale === "pl" ? DEMO_PLAINTEXT_PL : DEMO_PLAINTEXT_EN;
 
   useEffect(() => {
+    setScrambled(scrambleLike(demoPlaintext));
+
     const phaseInterval = setInterval(() => {
       setShowCiphertext((prev) => !prev);
     }, 2200);
 
     const scrambleInterval = setInterval(() => {
-      setScrambled(scrambleLike(DEMO_PLAINTEXT));
+      setScrambled(scrambleLike(demoPlaintext));
     }, 90);
 
     return () => {
       clearInterval(phaseInterval);
       clearInterval(scrambleInterval);
     };
-  }, []);
+  }, [demoPlaintext]);
 
   function scrollToComposer() {
     document.getElementById("composer")?.scrollIntoView({ behavior: "smooth" });
@@ -69,7 +75,7 @@ export function LandingHero() {
         className="inline-flex items-center gap-2 font-mono-vaultify text-xs uppercase tracking-wider text-accent mb-6 px-3 py-1 rounded-full border border-white/10 bg-white/[0.02]"
       >
         <ShieldCheck className="w-3.5 h-3.5" />
-        Zero-Knowledge - AES-256-GCM - Otwarte zrodlo
+        {t("hero.badge")}
       </motion.div>
 
       <motion.h1
@@ -78,9 +84,9 @@ export function LandingHero() {
         transition={{ duration: 0.5, delay: 0.1 }}
         className="text-5xl sm:text-6xl font-semibold tracking-tight text-center text-foreground max-w-2xl"
       >
-        Udostepnij sekret,
+        {t("hero.title1")}
         <br />
-        <span className="text-primary">ktorego nikt nie podejrzy.</span>
+        <span className="text-primary">{t("hero.title2")}</span>
       </motion.h1>
 
       <motion.p
@@ -89,9 +95,7 @@ export function LandingHero() {
         transition={{ duration: 0.5, delay: 0.2 }}
         className="mt-5 text-muted-foreground text-lg text-center max-w-lg"
       >
-        Hasla, klucze API, poufne wiadomosci - szyfrowane w Twojej
-        przegladarce, zanim cokolwiek trafi na nasz serwer. My tez nigdy nie
-        zobaczymy tresci.
+        {t("hero.subtitle")}
       </motion.p>
 
       <motion.div
@@ -104,12 +108,12 @@ export function LandingHero() {
           {showCiphertext ? (
             <>
               <Lock className="w-3.5 h-3.5 text-accent" />
-              Zaszyfrowane w Twojej przegladarce
+              {t("hero.demoLabelCipher")}
             </>
           ) : (
             <>
               <ShieldCheck className="w-3.5 h-3.5 text-primary" />
-              Twoja tresc
+              {t("hero.demoLabelPlain")}
             </>
           )}
         </div>
@@ -120,9 +124,11 @@ export function LandingHero() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.3 }}
-            className={"font-mono-vaultify text-sm break-all " + (showCiphertext ? "text-accent/80" : "text-foreground")}
+            className={`font-mono-vaultify text-sm break-all ${
+              showCiphertext ? "text-accent/80" : "text-foreground"
+            }`}
           >
-            {showCiphertext ? scrambled : DEMO_PLAINTEXT}
+            {showCiphertext ? scrambled : demoPlaintext}
           </motion.p>
         </AnimatePresence>
       </motion.div>
@@ -137,14 +143,8 @@ export function LandingHero() {
           onClick={scrollToComposer}
           className="px-6 py-3 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium transition-colors"
         >
-          Stworz bezpieczny link
+          {t("hero.ctaCreate")}
         </button>
-        <Link
-          href="/how-it-works"
-          className="px-6 py-3 rounded-xl border border-white/10 hover:border-white/20 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          Jak to dziala?
-        </Link>
         
           <a href="https://github.com/Andrii418/vaultify"
           target="_blank"
@@ -152,7 +152,7 @@ export function LandingHero() {
           className="flex items-center gap-2 px-6 py-3 rounded-xl border border-white/10 hover:border-white/20 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <GithubIcon className="w-4 h-4" />
-          Zobacz kod zrodlowy
+          {t("hero.ctaGithub")}
         </a>
       </motion.div>
 
@@ -164,15 +164,15 @@ export function LandingHero() {
       >
         <span className="flex items-center gap-1.5">
           <Lock className="w-3.5 h-3.5" />
-          AES-256-GCM
+          {t("hero.trustEncryption")}
         </span>
         <span className="flex items-center gap-1.5">
           <Flame className="w-3.5 h-3.5" />
-          Samozniszczenie po odczycie
+          {t("hero.trustBurn")}
         </span>
         <span className="flex items-center gap-1.5">
           <ShieldCheck className="w-3.5 h-3.5" />
-          Serwer nigdy nie widzi tresci
+          {t("hero.trustBlind")}
         </span>
       </motion.div>
 
@@ -185,7 +185,7 @@ export function LandingHero() {
           y: { duration: 1.6, repeat: Infinity, ease: "easeInOut" },
         }}
         className="absolute bottom-8 text-muted-foreground hover:text-foreground transition-colors"
-        aria-label="Przewin w dol"
+        aria-label="Scroll down"
       >
         <ChevronDown className="w-6 h-6" />
       </motion.button>
