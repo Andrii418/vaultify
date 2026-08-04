@@ -27,6 +27,7 @@ import {
 } from "@/lib/crypto";
 import type { BurnedSecretResult } from "@/lib/supabase/types";
 import { ShareCombiner } from "@/components/vaultify/share-combiner";
+import { useLanguage } from "@/lib/i18n/language-context";
 
 type ViewState =
   | "loading"
@@ -41,6 +42,7 @@ type ViewState =
 
 export default function SecretViewPage() {
   const params = useParams<{ id: string }>();
+  const { t } = useLanguage();
   const [state, setState] = useState<ViewState>("loading");
   const [decryptedText, setDecryptedText] = useState<string>("");
   const [decryptedFile, setDecryptedFile] = useState<{
@@ -223,14 +225,14 @@ export default function SecretViewPage() {
       // lokalnie w `burnedPayload`, więc kolejne próby hasła NIE
       // wymagają nowego zapytania do serwera.
       setState("needs-password");
-      toast.error("Nieprawidłowe hasło. Spróbuj ponownie.");
+      toast.error(t("view.wrongPasswordToast"));
     }
   }
 
   async function handleCopy() {
     await navigator.clipboard.writeText(decryptedText);
     setCopied(true);
-    toast.success("Skopiowano do schowka.");
+    toast.success(t("view.copiedToast"));
     setTimeout(() => setCopied(false), 2000);
   }
 
@@ -267,7 +269,7 @@ export default function SecretViewPage() {
                 >
                   <Loader2 className="w-8 h-8 text-primary animate-spin" />
                   <p className="text-sm text-muted-foreground">
-                    Sprawdzanie linku...
+                    {t("view.checking")}
                   </p>
                 </motion.div>
               )}
@@ -286,16 +288,16 @@ export default function SecretViewPage() {
                   </div>
                   <div>
                     <h2 className="text-lg font-medium mb-1">
-                      Ten sekret jest chroniony hasłem
+                      {t("view.passwordTitle")}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      Poproś nadawcę o hasło, jeśli go nie znasz.
+                      {t("view.passwordDesc")}
                     </p>
                   </div>
                   <div className="space-y-3">
                     <Input
                       type="password"
-                      placeholder="Wpisz hasło"
+                      placeholder={t("view.passwordPlaceholder")}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && handlePasswordSubmit()}
@@ -311,10 +313,10 @@ export default function SecretViewPage() {
                       {state === "decrypting" ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Odszyfrowywanie...
+                          {t("view.decrypting")}
                         </>
                       ) : (
-                        "Odszyfruj"
+                        t("view.decryptButton")
                       )}
                     </Button>
                   </div>
@@ -333,21 +335,21 @@ export default function SecretViewPage() {
                     {burnedPayload?.is_final_view ? (
                       <>
                         <Flame className="w-3.5 h-3.5" />
-                        Ten sekret został właśnie zniszczony na serwerze
+                        {t("view.burnedNotice")}
                       </>
                     ) : burnedPayload?.remaining_views !== null &&
                       burnedPayload?.remaining_views !== undefined ? (
                       <>
                         <Eye className="w-3.5 h-3.5" />
-                        Pozostało jeszcze {burnedPayload.remaining_views}{" "}
+                        {t("view.remainingViews")} {burnedPayload.remaining_views}{" "}
                         {burnedPayload.remaining_views === 1
-                          ? "odczyt"
-                          : "odczyty(ów)"}
+                          ? t("view.remainingViewsSingle")
+                          : t("view.remainingViewsMulti")}
                       </>
                     ) : (
                       <>
                         <Eye className="w-3.5 h-3.5" />
-                        Ten link pozostanie aktywny aż wygaśnie
+                        {t("view.unlimitedNotice")}
                       </>
                     )}
                   </div>
@@ -384,7 +386,7 @@ export default function SecretViewPage() {
                         className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
                       >
                         <Download className="w-4 h-4 mr-1.5" />
-                        Pobierz
+                        {t("view.download")}
                       </Button>
                     </motion.div>
                   )}
@@ -403,7 +405,8 @@ export default function SecretViewPage() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                           >
-                            <Check className="w-4 h-4 text-accent" /> Skopiowano
+                            <Check className="w-4 h-4 text-accent" />{" "}
+                            {t("view.copiedLabel")}
                           </motion.span>
                         ) : (
                           <motion.span
@@ -412,7 +415,8 @@ export default function SecretViewPage() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                           >
-                            <Copy className="w-4 h-4" /> Kopiuj do schowka
+                            <Copy className="w-4 h-4" />{" "}
+                            {t("view.copyToClipboard")}
                           </motion.span>
                         )}
                       </AnimatePresence>
@@ -420,8 +424,7 @@ export default function SecretViewPage() {
                   )}
 
                   <p className="text-xs text-center text-muted-foreground">
-                    Ten link nie zadziała ponownie — zapisz treść, jeśli jej
-                    potrzebujesz.
+                    {t("view.oneTimeHint")}
                   </p>
                 </motion.div>
               )}
@@ -430,29 +433,29 @@ export default function SecretViewPage() {
               {state === "not-found" && (
                 <ErrorState
                   icon={<ShieldOff className="w-6 h-6 text-destructive" />}
-                  title="Sekret nie istnieje"
-                  description="Ten link jest nieprawidłowy lub sekret został już usunięty."
+                  title={t("view.notFoundTitle")}
+                  description={t("view.notFoundDesc")}
                 />
               )}
               {state === "expired" && (
                 <ErrorState
                   icon={<ShieldAlert className="w-6 h-6 text-destructive" />}
-                  title="Link wygasł"
-                  description="Czas życia tego sekretu już minął. Poproś nadawcę o nowy link."
+                  title={t("view.expiredTitle")}
+                  description={t("view.expiredDesc")}
                 />
               )}
               {state === "already-viewed" && (
                 <ErrorState
                   icon={<Flame className="w-6 h-6 text-destructive" />}
-                  title="Sekret już odczytany"
-                  description="Ten link był jednorazowy i został już wykorzystany przez kogoś (być może przez Ciebie wcześniej)."
+                  title={t("view.alreadyViewedTitle")}
+                  description={t("view.alreadyViewedDesc")}
                 />
               )}
               {state === "missing-key" && (
                 <ErrorState
                   icon={<Lock className="w-6 h-6 text-destructive" />}
-                  title="Niekompletny link"
-                  description="W tym adresie brakuje części odpowiedzialnej za odszyfrowanie. Upewnij się, że skopiowałeś cały link."
+                  title={t("view.missingKeyTitle")}
+                  description={t("view.missingKeyDesc")}
                 />
               )}
               {state === "wrong-password" && (
@@ -463,8 +466,8 @@ export default function SecretViewPage() {
                 >
                   <ErrorState
                     icon={<Lock className="w-6 h-6 text-destructive" />}
-                    title="Nieprawidłowe hasło"
-                    description="Spróbuj wpisać hasło jeszcze raz."
+                    title={t("view.wrongPasswordTitle")}
+                    description={t("view.wrongPasswordDesc")}
                   />
                 </motion.div>
               )}

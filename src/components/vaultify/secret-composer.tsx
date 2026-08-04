@@ -1,6 +1,7 @@
 "use client";
 
 import { PasswordStrengthMeter } from "@/components/vaultify/password-strength-meter";
+import { useLanguage } from "@/lib/i18n/language-context";
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
@@ -47,24 +48,33 @@ function scrambleText(length: number): string {
   return out;
 }
 
-const TTL_OPTIONS = [
-  { label: "5 minut", value: 5 * 60 * 1000 },
-  { label: "1 godzina", value: 60 * 60 * 1000 },
-  { label: "24 godziny", value: 24 * 60 * 60 * 1000 },
-  { label: "7 dni", value: 7 * 24 * 60 * 60 * 1000 },
-];
+function getTtlOptions(t: (key: string) => string) {
+  return [
+    { label: t("composer.ttl5min"), value: 5 * 60 * 1000 },
+    { label: t("composer.ttl1h"), value: 60 * 60 * 1000 },
+    { label: t("composer.ttl24h"), value: 24 * 60 * 60 * 1000 },
+    { label: t("composer.ttl7d"), value: 7 * 24 * 60 * 60 * 1000 },
+  ];
+}
 
-const VIEW_LIMIT_OPTIONS = [
-  { label: "1 raz (spal po odczycie)", value: "1" },
-  { label: "3 razy", value: "3" },
-  { label: "5 razy", value: "5" },
-  { label: "10 razy", value: "10" },
-  { label: "Bez limitu (do wygaśnięcia)", value: "unlimited" },
-];
+function getViewLimitOptions(t: (key: string) => string) {
+  return [
+    { label: t("composer.viewLimit1"), value: "1" },
+    { label: t("composer.viewLimit3"), value: "3" },
+    { label: t("composer.viewLimit5"), value: "5" },
+    { label: t("composer.viewLimit10"), value: "10" },
+    { label: t("composer.viewLimitUnlimited"), value: "unlimited" },
+  ];
+}
 
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4MB
 
 export function SecretComposer() {
+  const { t } = useLanguage();
+
+  const TTL_OPTIONS = getTtlOptions(t);
+  const VIEW_LIMIT_OPTIONS = getViewLimitOptions(t);
+
   const [secretText, setSecretText] = useState("");
   const [scrambled, setScrambled] = useState("");
   const [password, setPassword] = useState("");
@@ -106,14 +116,14 @@ export function SecretComposer() {
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     if (enableDuress) {
-      toast.error("Pliki nie są obsługiwane w trybie hasła-wabika.");
+      toast.error(t("composer.errorDuressFile"));
       e.target.value = "";
       return;
     }
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > MAX_FILE_SIZE) {
-      toast.error("Plik jest za duży. Maksymalny rozmiar to 4MB.");
+      toast.error(t("composer.errorFileTooBig"));
       e.target.value = "";
       return;
     }
@@ -123,28 +133,28 @@ export function SecretComposer() {
 
   async function handleCreateSecret() {
     if (!secretText.trim() && !selectedFile) {
-      toast.error("Wpisz treść lub dołącz plik, który chcesz udostępnić.");
+      toast.error(t("composer.errorEmptyContent"));
       return;
     }
     if (isPasswordProtected && password.length < 4) {
-      toast.error("Hasło musi mieć przynajmniej 4 znaki.");
+      toast.error(t("composer.errorPasswordShort"));
       return;
     }
     if (enableDuress) {
       if (decoyPassword.length < 4) {
-        toast.error("Hasło-wabik musi mieć przynajmniej 4 znaki.");
+        toast.error(t("composer.errorDuressShort"));
         return;
       }
       if (decoyPassword === password) {
-        toast.error("Hasło-wabik musi różnić się od prawdziwego hasła.");
+        toast.error(t("composer.errorDuressSame"));
         return;
       }
       if (!decoyText.trim()) {
-        toast.error("Wpisz treść, która pojawi się po podaniu hasła-wabika.");
+        toast.error(t("composer.errorDuressNoText"));
         return;
       }
       if (selectedFile) {
-        toast.error("Pliki nie są obsługiwane w trybie hasła-wabika.");
+        toast.error(t("composer.errorDuressFile"));
         return;
       }
     }
@@ -238,7 +248,7 @@ export function SecretComposer() {
       const result = await response.json();
 
       if (!response.ok) {
-        toast.error(result.error || "Nie udało się stworzyć linku.");
+        toast.error(result.error || t("composer.errorGeneric"));
         setIsCreating(false);
         return;
       }
@@ -248,10 +258,10 @@ export function SecretComposer() {
       const finalLink = keyForUrl ? `${baseUrl}#k=${keyForUrl}` : baseUrl;
 
       setGeneratedLink(finalLink);
-      toast.success("Bezpieczny link został stworzony.");
+      toast.success(t("composer.successCreated"));
     } catch (err) {
       console.error(err);
-      toast.error("Nie udało się stworzyć linku. Spróbuj ponownie.");
+      toast.error(t("composer.errorGeneric"));
     } finally {
       setIsCreating(false);
     }
@@ -261,7 +271,7 @@ export function SecretComposer() {
     if (!generatedLink) return;
     await navigator.clipboard.writeText(generatedLink);
     setCopied(true);
-    toast.success("Link skopiowany do schowka.");
+    toast.success(t("composer.copied"));
     setTimeout(() => setCopied(false), 2000);
   }
 
@@ -288,7 +298,7 @@ export function SecretComposer() {
         className="text-center mb-6"
       >
         <span className="font-mono-vaultify text-xs uppercase tracking-wider text-muted-foreground">
-          Zacznij tutaj
+          {t("composer.startHere")}
         </span>
       </motion.div>
 
@@ -310,7 +320,7 @@ export function SecretComposer() {
             >
               <div>
                 <Textarea
-                  placeholder="Wklej hasło, klucz API lub poufną wiadomość..."
+                  placeholder={t("composer.placeholder")}
                   value={secretText}
                   onChange={(e) => setSecretText(e.target.value)}
                   className="min-h-[140px] bg-black/30 border-white/10 focus-visible:ring-primary/50 font-mono-vaultify text-sm resize-none"
@@ -346,7 +356,7 @@ export function SecretComposer() {
                     className="w-full flex items-center gap-2 justify-center rounded-xl border border-dashed border-white/15 hover:border-primary/40 bg-white/[0.02] px-4 py-3 text-sm text-muted-foreground transition-colors"
                   >
                     <Paperclip className="w-4 h-4" />
-                    Dołącz plik (max 4MB)
+                    {t("composer.attachFile")}
                   </button>
                 ) : (
                   <div className="flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
@@ -376,10 +386,10 @@ export function SecretComposer() {
                   <Lock className="w-4 h-4 text-muted-foreground" />
                   <div>
                     <Label htmlFor="password-toggle" className="text-sm font-medium">
-                      Chroń dodatkowym hasłem
+                      {t("composer.protectPassword")}
                     </Label>
                     <p className="text-xs text-muted-foreground">
-                      Odbiorca będzie potrzebował linku i hasła
+                      {t("composer.protectPasswordDesc")}
                     </p>
                   </div>
                 </div>
@@ -400,7 +410,7 @@ export function SecretComposer() {
                   >
                     <Input
                       type="password"
-                      placeholder="Wpisz hasło (min. 4 znaki)"
+                      placeholder={t("composer.passwordPlaceholder")}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="bg-black/30 border-white/10"
@@ -412,10 +422,10 @@ export function SecretComposer() {
                         <EyeOff className="w-4 h-4 text-muted-foreground" />
                         <div>
                           <Label htmlFor="duress-toggle" className="text-sm font-medium">
-                            Dodaj hasło-wabik
+                            {t("composer.addDuress")}
                           </Label>
                           <p className="text-xs text-muted-foreground">
-                            Inne hasło pokaże fałszywą treść zamiast prawdziwej
+                            {t("composer.addDuressDesc")}
                           </p>
                         </div>
                       </div>
@@ -439,13 +449,13 @@ export function SecretComposer() {
                         >
                           <Input
                             type="password"
-                            placeholder="Hasło-wabik (musi różnić się od prawdziwego)"
+                            placeholder={t("composer.duressPasswordPlaceholder")}
                             value={decoyPassword}
                             onChange={(e) => setDecoyPassword(e.target.value)}
                             className="bg-black/30 border-white/10"
                           />
                           <Textarea
-                            placeholder="Treść, którą zobaczy osoba wpisując hasło-wabik..."
+                            placeholder={t("composer.duressTextPlaceholder")}
                             value={decoyText}
                             onChange={(e) => setDecoyText(e.target.value)}
                             className="min-h-[80px] bg-black/30 border-white/10 font-mono-vaultify text-sm resize-none"
@@ -461,7 +471,7 @@ export function SecretComposer() {
               <div>
                 <Label className="text-sm font-medium mb-2 flex items-center gap-2">
                   <Eye className="w-4 h-4 text-muted-foreground" />
-                  Ile razy sekret może zostać odczytany?
+                  {t("composer.viewLimitLabel")}
                 </Label>
                 <Select
                   value={viewLimit}
@@ -483,7 +493,7 @@ export function SecretComposer() {
                 </Select>
                 {selectedFile && (
                   <p className="text-xs text-muted-foreground mt-1.5">
-                    Sekrety z załącznikiem zawsze mają limit 1 odczytu.
+                    {t("composer.fileNoteSplit")}
                   </p>
                 )}
               </div>
@@ -492,11 +502,11 @@ export function SecretComposer() {
               <div>
                 <Label className="text-sm font-medium mb-2 flex items-center gap-2">
                   <Mail className="w-4 h-4 text-muted-foreground" />
-                  Powiadom mnie e-mailem, gdy ktoś odczyta (opcjonalnie)
+                  {t("composer.notifyLabel")}
                 </Label>
                 <Input
                   type="email"
-                  placeholder="twoj@email.com"
+                  placeholder={t("composer.notifyPlaceholder")}
                   value={notifyEmail}
                   onChange={(e) => setNotifyEmail(e.target.value)}
                   className="bg-black/30 border-white/10"
@@ -506,7 +516,7 @@ export function SecretComposer() {
               {/* Wybór czasu życia */}
               <div>
                 <Label className="text-sm font-medium mb-2 block">
-                  Link wygaśnie za
+                  {t("composer.ttlLabel")}
                 </Label>
                 <Select
                   value={ttl}
@@ -535,10 +545,10 @@ export function SecretComposer() {
                 {isCreating ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Szyfrowanie...
+                    {t("composer.submitting")}
                   </>
                 ) : (
-                  "Stwórz bezpieczny link"
+                  t("composer.submitButton")
                 )}
               </Button>
             </motion.div>
@@ -553,9 +563,11 @@ export function SecretComposer() {
                 <ShieldCheck className="w-6 h-6 text-accent" />
               </div>
               <div>
-                <h3 className="text-lg font-medium mb-1">Link jest gotowy</h3>
+                <h3 className="text-lg font-medium mb-1">
+                  {t("composer.resultTitle")}
+                </h3>
                 <p className="text-sm text-muted-foreground">
-                  Wyślij go zaufanej osobie — wygaśnie automatycznie.
+                  {t("composer.resultSubtitle")}
                 </p>
               </div>
 
@@ -599,7 +611,7 @@ export function SecretComposer() {
                 className="w-full flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
               >
                 <QrCode className="w-4 h-4" />
-                {showQr ? "Ukryj kod QR" : "Pokaż kod QR"}
+                {showQr ? t("composer.hideQr") : t("composer.showQr")}
               </button>
 
               <AnimatePresence>
@@ -619,7 +631,7 @@ export function SecretComposer() {
                       />
                     </div>
                     <p className="text-xs text-center text-muted-foreground mt-2">
-                      Zeskanuj telefonem, żeby otworzyć link
+                      {t("composer.qrHint")}
                     </p>
                   </motion.div>
                 )}
@@ -630,7 +642,7 @@ export function SecretComposer() {
                 variant="ghost"
                 className="text-muted-foreground hover:text-foreground"
               >
-                Stwórz kolejny sekret
+                {t("composer.createAnother")}
               </Button>
             </motion.div>
           )}
