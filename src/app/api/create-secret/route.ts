@@ -28,6 +28,10 @@ export async function POST(request: NextRequest) {
       is_split,
       share_threshold,
       share_total,
+      decoy_ciphertext,
+      decoy_iv,
+      decoy_salt,
+      has_duress,
     } = meta;
 
     if (!expires_at) {
@@ -51,8 +55,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    // Walidacja trybu podziału sekretu (Shamir's Secret Sharing).
     if (is_split) {
       if (file) {
         return NextResponse.json(
@@ -69,6 +71,20 @@ export async function POST(request: NextRequest) {
       ) {
         return NextResponse.json(
           { error: "Nieprawidłowe parametry podziału sekretu." },
+          { status: 400 }
+        );
+      }
+    }
+    if (has_duress) {
+      if (file) {
+        return NextResponse.json(
+          { error: "Pliki nie są obsługiwane w trybie hasła-wabika." },
+          { status: 400 }
+        );
+      }
+      if (!decoy_ciphertext || !decoy_iv || !decoy_salt) {
+        return NextResponse.json(
+          { error: "Brak danych treści-wabika." },
           { status: 400 }
         );
       }
@@ -132,7 +148,11 @@ export async function POST(request: NextRequest) {
       fileSize = meta.file_size_original;
     }
 
-    const finalMaxViews: number | null = is_split ? null : file ? 1 : max_views ?? null;
+    const finalMaxViews: number | null = is_split
+      ? null
+      : file
+      ? 1
+      : max_views ?? null;
 
     const { error: insertError } = await supabase.from("secrets").insert({
       id: newId,
@@ -151,6 +171,10 @@ export async function POST(request: NextRequest) {
       is_split: !!is_split,
       share_threshold: is_split ? share_threshold : null,
       share_total: is_split ? share_total : null,
+      decoy_ciphertext: has_duress ? decoy_ciphertext : null,
+      decoy_iv: has_duress ? decoy_iv : null,
+      decoy_salt: has_duress ? decoy_salt : null,
+      has_duress: !!has_duress,
     });
 
     if (insertError) {

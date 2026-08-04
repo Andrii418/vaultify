@@ -23,6 +23,7 @@ import {
   decryptTextWithKey,
   decryptFileWithKey,
   resolveDecryptionKey,
+  decryptDuressSecret,
 } from "@/lib/crypto";
 import type { BurnedSecretResult } from "@/lib/supabase/types";
 import { ShareCombiner } from "@/components/vaultify/share-combiner";
@@ -79,6 +80,33 @@ export default function SecretViewPage() {
     urlKey?: string,
     pwd?: string
   ) {
+    // Tryb duress: próbujemy wpisanego hasła najpierw jako prawdziwe,
+    // a jeśli nie pasuje — jako wabik. Odbiorca nigdy nie dowie się,
+    // która ścieżka faktycznie zadziałała.
+    if (data.has_duress && pwd) {
+      if (
+        !data.ciphertext ||
+        !data.iv ||
+        !data.salt ||
+        !data.decoy_ciphertext ||
+        !data.decoy_iv ||
+        !data.decoy_salt
+      ) {
+        throw new Error("DURESS_DATA_MISSING");
+      }
+      const text = await decryptDuressSecret(
+        pwd,
+        { ciphertext: data.ciphertext, iv: data.iv, salt: data.salt },
+        {
+          ciphertext: data.decoy_ciphertext,
+          iv: data.decoy_iv,
+          salt: data.decoy_salt,
+        }
+      );
+      setDecryptedText(text);
+      return;
+    }
+
     const key = await resolveDecryptionKey(urlKey, pwd, data.salt);
 
     if (data.ciphertext && data.iv) {

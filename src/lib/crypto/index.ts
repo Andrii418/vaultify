@@ -232,3 +232,53 @@ export async function combineSharesToKey(
     ["encrypt", "decrypt"]
   );
 }
+
+/**
+ * Generuje klucz szyfrujący wyprowadzony z konkretnego hasła —
+ * używane w trybie hasła-wabika, gdzie potrzebujemy DWÓCH niezależnych
+ * kluczy (dla prawdziwej treści i dla wabika), każdy z własną solą.
+ */
+export async function createPasswordKey(
+  password: string
+): Promise<{ key: CryptoKey; salt: string }> {
+  const saltBytes = generateSalt();
+  const key = await deriveKeyFromPassword(password, saltBytes);
+  return { key, salt: saltToBase64Url(saltBytes) };
+}
+
+/**
+ * Próbuje odszyfrować treść w trybie hasła-wabika: najpierw próbuje
+ * wpisane hasło jako klucz do PRAWDZIWEJ treści, a jeśli się nie uda
+ * (złe hasło do tej ścieżki) — próbuje tego samego hasła jako klucza
+ * do treści-wabika. Zwraca to, co się powiodło jako pierwsze.
+ *
+ * Kluczowe: z zewnątrz (czas wykonania, komunikaty błędów) nie da się
+ * odróżnić "trafiłeś w prawdziwe hasło" od "trafiłeś w wabik" — obie
+ * ścieżki używają identycznej logiki odszyfrowania AES-GCM.
+ */
+export async function decryptDuressSecret(
+  password: string,
+  real: { ciphertext: string; iv: string; salt: string },
+  decoy: { ciphertext: string; iv: string; salt: string }
+): Promise<string> {
+  try {
+    const realKey = await deriveKeyFromPassword(
+      password,
+      base64UrlToSalt(real.salt)
+    );
+    return await decryptData(
+      { ciphertext: real.ciphertext, iv: real.iv },
+      realKey
+    );
+  } catch {
+    // Prawdziwe hasło nie pasowało — próbujemy ścieżki wabika.
+    const decoyKey = await deriveKeyFromPassword(
+      password,
+      base64UrlToSalt(decoy.salt)
+    );
+    return decryptData(
+      { ciphertext: decoy.ciphertext, iv: decoy.iv },
+      decoyKey
+    );
+  }
+}

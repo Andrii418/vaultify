@@ -42,4 +42,8 @@ export interface BurnedSecretResult {
   file_size: number | null;
   is_final_view: boolean;
   remaining_views: number | null;
+  decoy_ciphertext: string | null;
+  decoy_iv: string | null;
+  decoy_salt: string | null;
+  has_duress: boolean;
 }

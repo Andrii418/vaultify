@@ -11,6 +11,7 @@ import {
   Check,
   Loader2,
   Eye,
+  EyeOff,
   Paperclip,
   X,
   QrCode,
@@ -33,6 +34,7 @@ import {
   createEncryptionKey,
   encryptTextWithKey,
   encryptFileWithKey,
+  createPasswordKey,
 } from "@/lib/crypto";
 
 const CIPHER_CHARS = "ABCDEF0123456789-_abcdef";
@@ -76,6 +78,11 @@ export function SecretComposer() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [showQr, setShowQr] = useState(false);
 
+  // Tryb hasła-wabika (duress password)
+  const [enableDuress, setEnableDuress] = useState(false);
+  const [decoyPassword, setDecoyPassword] = useState("");
+  const [decoyText, setDecoyText] = useState("");
+
   const scrambleIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
     null
   );
@@ -98,6 +105,11 @@ export function SecretComposer() {
   }, [secretText.length]);
 
   function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    if (enableDuress) {
+      toast.error("Pliki nie są obsługiwane w trybie hasła-wabika.");
+      e.target.value = "";
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > MAX_FILE_SIZE) {
@@ -118,16 +130,60 @@ export function SecretComposer() {
       toast.error("Hasło musi mieć przynajmniej 4 znaki.");
       return;
     }
+    if (enableDuress) {
+      if (decoyPassword.length < 4) {
+        toast.error("Hasło-wabik musi mieć przynajmniej 4 znaki.");
+        return;
+      }
+      if (decoyPassword === password) {
+        toast.error("Hasło-wabik musi różnić się od prawdziwego hasła.");
+        return;
+      }
+      if (!decoyText.trim()) {
+        toast.error("Wpisz treść, która pojawi się po podaniu hasła-wabika.");
+        return;
+      }
+      if (selectedFile) {
+        toast.error("Pliki nie są obsługiwane w trybie hasła-wabika.");
+        return;
+      }
+    }
 
     setIsCreating(true);
 
     try {
-      const {
-        key,
-        keyForUrl,
-        salt,
-        isPasswordProtected: isProtected,
-      } = await createEncryptionKey(isPasswordProtected ? password : undefined);
+      let key: CryptoKey;
+      let keyForUrl: string | null = null;
+      let salt: string | null = null;
+      let isProtected = false;
+      let decoyPayload: { ciphertext: string; iv: string; salt: string } | null =
+        null;
+
+      if (enableDuress) {
+        // Tryb duress: DWA niezależne klucze, jeden dla prawdziwej
+        // treści, jeden dla wabika. Każdy z własną solą.
+        const realKeyObj = await createPasswordKey(password);
+        const decoyKeyObj = await createPasswordKey(decoyPassword);
+
+        key = realKeyObj.key;
+        salt = realKeyObj.salt;
+        isProtected = true;
+
+        const decoyEncrypted = await encryptTextWithKey(decoyText, decoyKeyObj.key);
+        decoyPayload = {
+          ciphertext: decoyEncrypted.ciphertext,
+          iv: decoyEncrypted.iv,
+          salt: decoyKeyObj.salt,
+        };
+      } else {
+        const created = await createEncryptionKey(
+          isPasswordProtected ? password : undefined
+        );
+        key = created.key;
+        keyForUrl = created.keyForUrl;
+        salt = created.salt;
+        isProtected = created.isPasswordProtected;
+      }
 
       const maxViews = viewLimit === "unlimited" ? null : Number(viewLimit);
 
@@ -137,7 +193,14 @@ export function SecretComposer() {
         max_views: maxViews,
         expires_at: new Date(Date.now() + Number(ttl)).toISOString(),
         notify_email: notifyEmail.trim() || null,
+        has_duress: enableDuress,
       };
+
+      if (decoyPayload) {
+        meta.decoy_ciphertext = decoyPayload.ciphertext;
+        meta.decoy_iv = decoyPayload.iv;
+        meta.decoy_salt = decoyPayload.salt;
+      }
 
       if (secretText.trim()) {
         const textPayload = await encryptTextWithKey(secretText, key);
@@ -147,7 +210,7 @@ export function SecretComposer() {
 
       const formData = new FormData();
 
-      if (selectedFile) {
+      if (selectedFile && !enableDuress) {
         const filePayload = await encryptFileWithKey(selectedFile, key);
         meta.file_iv = filePayload.iv;
         meta.file_name = selectedFile.name;
@@ -209,6 +272,9 @@ export function SecretComposer() {
     setSelectedFile(null);
     setViewLimit("1");
     setNotifyEmail("");
+    setEnableDuress(false);
+    setDecoyPassword("");
+    setDecoyText("");
     setGeneratedLink(null);
     setShowQr(false);
   }
@@ -340,6 +406,53 @@ export function SecretComposer() {
                       className="bg-black/30 border-white/10"
                     />
                     <PasswordStrengthMeter password={password} />
+
+                    <div className="mt-4 flex items-center justify-between rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <EyeOff className="w-4 h-4 text-muted-foreground" />
+                        <div>
+                          <Label htmlFor="duress-toggle" className="text-sm font-medium">
+                            Dodaj hasło-wabik
+                          </Label>
+                          <p className="text-xs text-muted-foreground">
+                            Inne hasło pokaże fałszywą treść zamiast prawdziwej
+                          </p>
+                        </div>
+                      </div>
+                      <Switch
+                        id="duress-toggle"
+                        checked={enableDuress}
+                        onCheckedChange={(checked) => {
+                          setEnableDuress(checked);
+                          if (checked) setSelectedFile(null);
+                        }}
+                      />
+                    </div>
+
+                    <AnimatePresence>
+                      {enableDuress && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="overflow-hidden mt-3 space-y-3"
+                        >
+                          <Input
+                            type="password"
+                            placeholder="Hasło-wabik (musi różnić się od prawdziwego)"
+                            value={decoyPassword}
+                            onChange={(e) => setDecoyPassword(e.target.value)}
+                            className="bg-black/30 border-white/10"
+                          />
+                          <Textarea
+                            placeholder="Treść, którą zobaczy osoba wpisując hasło-wabik..."
+                            value={decoyText}
+                            onChange={(e) => setDecoyText(e.target.value)}
+                            className="min-h-[80px] bg-black/30 border-white/10 font-mono-vaultify text-sm resize-none"
+                          />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </motion.div>
                 )}
               </AnimatePresence>
