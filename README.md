@@ -24,8 +24,6 @@ A zero-knowledge tool for securely sharing one-time secrets — passwords, API k
 
 ## Running locally
 
-\`\`\`bash
 npm install
 cp .env.example .env.local  # fill in with your own Supabase keys
 npm run dev
-\`\`\`
