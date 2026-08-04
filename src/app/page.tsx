@@ -1,6 +1,6 @@
 import { LandingHero } from "@/components/vaultify/landing-hero";
 import { HowItWorks } from "@/components/vaultify/how-it-works";
-import { SecretComposer } from "@/components/vaultify/secret-composer";
+import { ComposerTabs } from "@/components/vaultify/composer-tabs";
 
 export default function HomePage() {
   return (
@@ -8,8 +8,8 @@ export default function HomePage() {
       <LandingHero />
       <HowItWorks />
       <section id="composer" className="px-4 py-20 sm:py-28">
-        <SecretComposer />
+        <ComposerTabs />
       </section>
     </main>
   );
-} 
+}

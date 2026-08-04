@@ -17,6 +17,13 @@ import {
 } from "./aes";
 
 import {
+  splitSecretBytes,
+  combineSecretBytes,
+  encodeShare,
+  decodeShare,
+} from "./shamir";
+
+import {
   generateSalt,
   saltToBase64Url,
   base64UrlToSalt,
@@ -186,3 +193,42 @@ export async function resolveDecryptionKey(
 }
 
 export type { EncryptedPayload };
+
+/**
+ * Dzieli klucz szyfrujący na N udziałów metodą Shamir's Secret
+ * Sharing — do odtworzenia klucza potrzeba dowolnych `threshold`
+ * spośród `totalShares` udziałów.
+ */
+export async function splitKeyIntoShares(
+  key: CryptoKey,
+  totalShares: number,
+  threshold: number
+): Promise<string[]> {
+  const rawKey = await window.crypto.subtle.exportKey("raw", key);
+  const shares = splitSecretBytes(
+    new Uint8Array(rawKey),
+    totalShares,
+    threshold
+  );
+  return shares.map(encodeShare);
+}
+
+/**
+ * Odtwarza klucz AES-GCM z podanych, zakodowanych udziałów. Jeśli
+ * udziały są niepoprawne/niepasujące, wynikowy klucz i tak nie
+ * przejdzie weryfikacji tagu uwierzytelniającego GCM przy deszyfrowaniu
+ * — to dodatkowa, wbudowana warstwa bezpieczeństwa.
+ */
+export async function combineSharesToKey(
+  encodedShares: string[]
+): Promise<CryptoKey> {
+  const shares = encodedShares.map(decodeShare);
+  const rawKey = combineSecretBytes(shares);
+  return window.crypto.subtle.importKey(
+    "raw",
+    rawKey.buffer as ArrayBuffer,
+    { name: "AES-GCM", length: 256 },
+    true,
+    ["encrypt", "decrypt"]
+  );
+}

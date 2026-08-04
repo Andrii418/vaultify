@@ -4,9 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 const RATE_LIMIT_MAX = 5;
 const RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
-
-// Limit narzucony przez Vercel (serverless function body ~4.5MB) —
-// zostawiamy margines bezpieczeństwa.
 const MAX_FILE_SIZE_BYTES = 4 * 1024 * 1024; // 4MB
 
 export async function POST(request: NextRequest) {
@@ -28,13 +25,13 @@ export async function POST(request: NextRequest) {
       max_views,
       expires_at,
       notify_email,
+      is_split,
+      share_threshold,
+      share_total,
     } = meta;
 
     if (!expires_at) {
-      return NextResponse.json(
-        { error: "Brak wymaganych pól." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Brak wymaganych pól." }, { status: 400 });
     }
     if (!ciphertext && !file) {
       return NextResponse.json(
@@ -55,6 +52,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Walidacja trybu podziału sekretu (Shamir's Secret Sharing).
+    if (is_split) {
+      if (file) {
+        return NextResponse.json(
+          { error: "Pliki nie są obsługiwane w trybie podziału sekretu." },
+          { status: 400 }
+        );
+      }
+      if (
+        !Number.isInteger(share_threshold) ||
+        !Number.isInteger(share_total) ||
+        share_threshold < 2 ||
+        share_total < share_threshold ||
+        share_total > 10
+      ) {
+        return NextResponse.json(
+          { error: "Nieprawidłowe parametry podziału sekretu." },
+          { status: 400 }
+        );
+      }
+    }
+
     const forwardedFor = request.headers.get("x-forwarded-for");
     const ip = forwardedFor ? forwardedFor.split(",")[0].trim() : "unknown";
     const ipHash = createHash("sha256").update(ip).digest("hex");
@@ -72,10 +91,7 @@ export async function POST(request: NextRequest) {
 
     if (rateLimitError) {
       console.error("Rate limit check failed:", rateLimitError);
-      return NextResponse.json(
-        { error: "Błąd wewnętrzny serwera." },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Błąd wewnętrzny serwera." }, { status: 500 });
     }
     if (!allowed) {
       return NextResponse.json(
@@ -106,10 +122,7 @@ export async function POST(request: NextRequest) {
 
       if (uploadError) {
         console.error("Storage upload failed:", uploadError);
-        return NextResponse.json(
-          { error: "Nie udało się zapisać pliku." },
-          { status: 500 }
-        );
+        return NextResponse.json({ error: "Nie udało się zapisać pliku." }, { status: 500 });
       }
 
       filePath = storagePath;
@@ -119,10 +132,7 @@ export async function POST(request: NextRequest) {
       fileSize = meta.file_size_original;
     }
 
-    // Jeśli sekret zawiera plik, WYMUSZAMY limit = 1 odczyt,
-    // niezależnie od tego, co przyszło z formularza — plik musi
-    // zniknąć ze Storage od razu po pierwszym pobraniu.
-    const finalMaxViews: number | null = file ? 1 : max_views ?? null;
+    const finalMaxViews: number | null = is_split ? null : file ? 1 : max_views ?? null;
 
     const { error: insertError } = await supabase.from("secrets").insert({
       id: newId,
@@ -138,6 +148,9 @@ export async function POST(request: NextRequest) {
       file_mime: fileMime,
       file_size: fileSize,
       notify_email: notify_email || null,
+      is_split: !!is_split,
+      share_threshold: is_split ? share_threshold : null,
+      share_total: is_split ? share_total : null,
     });
 
     if (insertError) {
@@ -145,18 +158,12 @@ export async function POST(request: NextRequest) {
       if (filePath) {
         await supabase.storage.from("secret-files").remove([filePath]);
       }
-      return NextResponse.json(
-        { error: "Nie udało się zapisać sekretu." },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Nie udało się zapisać sekretu." }, { status: 500 });
     }
 
     return NextResponse.json({ id: newId });
   } catch (err) {
     console.error("Unexpected error:", err);
-    return NextResponse.json(
-      { error: "Wystąpił nieoczekiwany błąd." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Wystąpił nieoczekiwany błąd." }, { status: 500 });
   }
 }
