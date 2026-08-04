@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { ShieldCheck, Lock, Flame, ChevronDown } from "lucide-react";
 import { useLanguage } from "@/lib/i18n/language-context";
@@ -145,6 +146,12 @@ export function LandingHero() {
         >
           {t("hero.ctaCreate")}
         </button>
+        <Link
+          href="/how-it-works"
+          className="px-6 py-3 rounded-xl border border-white/10 hover:border-white/20 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {t("hero.ctaHowItWorks")}
+        </Link>
         
           <a href="https://github.com/Andrii418/vaultify"
           target="_blank"
