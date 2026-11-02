@@ -22,8 +22,3 @@ A zero-knowledge tool for securely sharing one-time secrets — passwords, API k
 - Expired secrets are automatically purged every 15 minutes via `pg_cron`.
 - Optional password protection, deriving the encryption key with PBKDF2 instead of embedding a random key in the URL.
 
-## Running locally
-
-npm install
-cp .env.example .env.local  # fill in with your own Supabase keys
-npm run dev
