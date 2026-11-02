@@ -1,4 +1,4 @@
-# 🔐 Vaultify
+# Vaultify
 
 A zero-knowledge tool for securely sharing one-time secrets — passwords, API keys, confidential messages — through links the server is mathematically incapable of reading.
 
